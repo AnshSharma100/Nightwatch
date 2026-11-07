@@ -9,7 +9,7 @@ import type { Scenario } from '../engine/simulate.ts'
 import { AlertRail } from './AlertRail.tsx'
 import { DecisionLab } from './DecisionLab.tsx'
 import { Inspector } from './Inspector.tsx'
-import { NetworkMap } from './NetworkMap.tsx'
+import { SpatialView } from './SpatialView.tsx'
 import type { Scope } from './NetworkMap.tsx'
 import { loadPractice, loadUpload, practiceNames } from './datasets.ts'
 import { practiceLabel, stamp, utc } from './format.ts'
@@ -32,6 +32,7 @@ export function App() {
   const [index, setIndex] = useState(0)
   const [scope, setScope] = useState<Scope>({})
   const [selected, setSelected] = useState<string | null>(null)
+  const [focusRequest, setFocusRequest] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [status, setStatus] = useState('Loading practice telemetry…')
   const [error, setError] = useState('')
@@ -105,6 +106,7 @@ export function App() {
     if (!replay || at < replay.detectedAt) return
     setPlaying(false)
     setSelected(replay.assetId)
+    setFocusRequest((value) => value + 1)
     setScope({ systemId: replay.systemId, facilityId: demo.stage === 'first-replay' ? replay.facilityId : undefined })
     setDemo({ ...demo, stage: demo.stage === 'first-replay' ? 'first-failure' : 'cluster' })
   }, [at, demo, playing])
@@ -118,12 +120,14 @@ export function App() {
     const asset = data.assets.get(id)
     const yard = data.systems.find((system) => yardId(system.id) === id)
     setSelected(id)
+    setFocusRequest((value) => value + 1)
     if (asset) setScope({ systemId: asset.systemId, facilityId: asset.facilityId })
     else if (yard) setScope({ systemId: yard.id })
   }
 
   function navigate(next: Scope) {
     setScope(next)
+    setFocusRequest((value) => value + 1)
     setSelected(next.facilityId ?? next.systemId ?? null)
   }
 
@@ -220,7 +224,7 @@ export function App() {
               {system && <><span>/</span><select aria-label="Select facility" value={scope.facilityId ?? ''} onChange={(event) => navigate({ systemId: system.id, facilityId: event.target.value || undefined })}>
                 <option value="">All facilities</option>{system.facilities.map((facility) => <option key={facility.id}>{facility.id}</option>)}</select></>}
             </nav>
-            <div className="map-container"><NetworkMap data={data} at={at} scope={scope} selected={selected} alerts={alerts} onSelect={setSelected} onFocus={focus} /></div>
+            <div className="map-container"><SpatialView focusRequest={focusRequest} data={data} at={at} scope={scope} selected={selected} alerts={alerts} onSelect={setSelected} onFocus={focus} /></div>
             <div className="map-footer"><span><i className="legend-dot water" /> Produced water</span><span><i className="legend-dot fault" /> Pump fault</span><span><i className="legend-dot inspect" /> Inspection</span></div>
           </section>
           <Inspector data={data} at={at} selected={selected} alerts={alerts} onSelect={setSelected} onFocus={focus} onLab={openLab} />
