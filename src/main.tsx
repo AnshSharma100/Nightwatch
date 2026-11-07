@@ -1,3 +1,5 @@
 import { createRoot } from 'react-dom/client'
+import { App } from './ui/App.tsx'
+import './ui/styles.css'
 
-createRoot(document.getElementById('root')!).render(<main><h1>NIGHTWATCH</h1><p>Produced-water operations</p></main>)
+createRoot(document.getElementById('root')!).render(<App />)
