@@ -1,0 +1,30 @@
+{
+  "name": "nightwatch-hackutd-2026",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "data": "node scripts/prepare-data.mjs",
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "validate:eog": "node --experimental-strip-types scripts/validate-eog.ts"
+  },
+  "dependencies": {
+    "@react-three/drei": "^10.7.0",
+    "@react-three/fiber": "^9.5.0",
+    "lucide-react": "^0.577.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.183.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/three": "^0.183.0",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.6"
+  },
+  "engines": { "node": ">=24" }
+}
