@@ -13,6 +13,7 @@ import './labels.css'
 import type { FacilityLayout, Position, RegionLayout, WorldLayout } from './layout.ts'
 
 interface SceneProps extends MapProps {
+  night?: boolean
   focusRequest: number
   onContextLost: () => void
 }
@@ -295,14 +296,13 @@ function World({ world, labels, nodes, ...props }: SceneProps & { world: WorldLa
   const shadowWidth = Math.min(65, Math.max(12, span * .6))
   return <>
     <ContextWatcher onLost={props.onContextLost} />
-    <color attach="background" args={['#213b42']} />
+    <color attach="background" args={[props.night ? '#213b42' : '#b9c9bf']} />
     <hemisphereLight args={['#dfebdf', '#778273', 2.15]} />
     <primitive object={lightTarget} position={target} />
     <directionalLight position={add(target, [-40, 60, 25])} target={lightTarget} intensity={2.4} color="#ffe5b9"
       castShadow={Boolean(props.scope.systemId)} shadow-mapSize={[1024, 1024]} shadow-normalBias={.055}
       shadow-camera-left={-shadowWidth} shadow-camera-right={shadowWidth} shadow-camera-top={shadowWidth} shadow-camera-bottom={-shadowWidth} />
     <directionalLight position={[35, 12, -30]} intensity={.62} color="#a1cecf" />
-    <gridHelper args={[1200, 240, '#355054', '#2a4549']} position={[0, -1.08, 0]} />
     {world.regions.map((region) => <Region key={region.system.id} {...props} region={region} reduced={reduced} />)}
     <CameraRig target={target} span={span} bounds={bounds} focusRequest={props.focusRequest} reduced={reduced} />
     <ProjectLabels labels={labels} nodes={nodes} />

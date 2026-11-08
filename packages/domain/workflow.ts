@@ -67,12 +67,12 @@ export function caseFromAlert(data: Dataset, alert: Alert, observedAt: number): 
 
 export const stageLabel: Record<Stage, string> = {
   detected: 'Detected', under_review: 'Under review', monitoring: 'Monitoring', dismissed: 'Dismissed',
-  confirmed: 'Confirmed', assigned: 'Assigned', acknowledged: 'Acknowledged', in_progress: 'In progress', resolved: 'Resolved',
+  confirmed: 'Confirmed', assigned: 'Assigned', acknowledged: 'Acknowledged', in_progress: 'In progress', resolved: 'Work complete',
 }
 
 export const actionLabel: Record<Action, string> = {
   review: 'Begin review', monitor: 'Keep monitoring', dismiss: 'Dismiss', confirm: 'Confirm incident',
-  assign: 'Send to Field', acknowledge: 'Acknowledge', start: 'Start work', progress: 'Post progress update', handoff: 'Assign to lease operator', resolve: 'Mark resolved',
+  assign: 'Send to Field', acknowledge: 'Acknowledge', start: 'Start work', progress: 'Post progress update', handoff: 'Assign to lease operator', resolve: 'Complete assignment',
 }
 
 export function assigneeName(actor: Actor, incident: WorkflowCase) {

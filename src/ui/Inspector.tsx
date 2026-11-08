@@ -70,11 +70,11 @@ function Response({ alert, planning, onLab }: { alert: Alert; planning: Planning
     {jobs.length + shutIns.length > 0 ? <ul>
       {jobs.map((job) => <li key={job.truck + ':' + job.dispatchMin}>Truck {job.truck} · {job.trips} {job.trips === 1 ? 'trip' : 'trips'} · first arrival in {duration(job.arrivals[0])}</li>)}
       {shutIns.map((stop) => <li key={stop.wellId}>Shut in {stop.wellId} at +{duration(stop.startMin)}</li>)}
-    </ul> : <p>{!result ? 'Compare feasible actions for this system.' : alert.automatic ? 'Monitor through repair. Wells are already shut in.' :
+    </ul> : <p>{!result ? 'A comparison needs tank readings from all failed facilities.' : alert.automatic ? 'Monitor through repair. Wells are already shut in.' :
       result.autoAt === null ? 'Monitor through repair.' : 'Allow automatic shut-in through repair.'}</p>}
     {baseline && <p className="baseline-loss">{money(baseline.costs.oil + baseline.costs.gas)} projected lost revenue here without action</p>}
     {result && <p className="baseline-loss">{money(result.costs.total)} recommended cost here · oil, gas and trucking</p>}
-    <button className="primary-btn" onClick={() => onLab(alert.systemId)}>Compare response plans <ArrowUpRight size={15} /></button>
+    <button className="primary-btn" disabled={!planning} onClick={() => onLab(alert.systemId)}>Compare response plans <ArrowUpRight size={15} /></button>
   </section>
 }
 
@@ -99,7 +99,7 @@ export function Inspector({ data, at, selected, alerts, planning, onSelect, onLa
   const failure = alert?.category === 'pump_failure'
   const approved = alert && facility ? fieldResponse(alert, facility, planning?.search.best) : ''
   return <aside id="asset-inspector" className="operator-inspector" aria-label="Asset inspector">
-    <div className="workspace-pane-head"><h2>Inspector</h2><button className="stage-inspector-toggle" aria-label="Close inspector" onClick={onClose}><X size={17} /></button></div>
+    <div className="workspace-pane-head"><h2>{alert ? 'Incident brief' : 'Equipment details'}</h2><button className="stage-inspector-toggle" aria-label="Close inspector" onClick={onClose}><X size={17} /></button></div>
     {!asset ? <div className="inspector-empty"><LocateFixed size={22} /><h3>Inspect the network</h3><p>{data.systems.length} systems · {data.facilities.size} facilities</p>
       <div className="system-links">{data.systems.map((item) => <button key={item.id} className="asset-link" onClick={() => onSelect(item.id)}>{item.id}<ChevronRight size={14} /></button>)}</div></div> :
       <div className="inspector-content" key={asset.id}>

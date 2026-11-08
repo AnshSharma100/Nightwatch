@@ -13,7 +13,7 @@ class SceneBoundary extends Component<{ children: ReactNode; fallback: ReactNode
   render() { return this.state.failed ? this.props.fallback : this.props.children }
 }
 
-export function SpatialView({ focusRequest, ...props }: MapProps & { focusRequest: number }) {
+export function SpatialView({ focusRequest, night, ...props }: MapProps & { focusRequest: number; night: boolean }) {
   const [mode, setMode] = useState<'3d' | 'list'>('3d')
   const [lost, setLost] = useState(() => {
     try { return !document.createElement('canvas').getContext('webgl2') }
@@ -24,7 +24,7 @@ export function SpatialView({ focusRequest, ...props }: MapProps & { focusReques
   return <>
     {in3d ? <SceneBoundary fallback={list} onFailure={() => setLost(true)}>
       <Suspense fallback={<span className="scene-unavailable">Building network geometry…</span>}>
-        <Scene {...props} focusRequest={focusRequest} onContextLost={() => setLost(true)} />
+        <Scene {...props} night={night} focusRequest={focusRequest} onContextLost={() => setLost(true)} />
       </Suspense>
     </SceneBoundary> : list}
     <div className={'scene-toolbar' + (!in3d ? ' toolbar-list' : '')}>
@@ -32,7 +32,7 @@ export function SpatialView({ focusRequest, ...props }: MapProps & { focusReques
         <button className="small-btn" onClick={() => setMode(in3d ? 'list' : '3d')}>{in3d ? <List size={13} /> : <Box size={13} />} {in3d ? 'List view' : '3D view'}</button>}
     </div>
     {in3d && <div className="scene-overlay">
-      <span className="scene-schematic"><Compass size={14} /> Schematic network</span>
+      <span className="scene-schematic"><Compass size={14} /> Schematic · {props.data.systems.length} systems</span>
       <span className="scene-gestures"><Mouse size={14} /> Drag to orbit · Scroll to zoom</span>
     </div>}
   </>

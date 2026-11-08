@@ -1,51 +1,63 @@
 @layer workspace {
   .nightwatch-field { min-height: 100dvh; }
-  .nightwatch-field > header { position: sticky; top: 0; z-index: 2; padding-top: max(12px, env(safe-area-inset-top)); }
-  .nightwatch-field > header h1 { font-size: clamp(16px, 4.5vw, 22px); }
-  .nightwatch-field main { padding: 16px 15px max(22px, env(safe-area-inset-bottom)); }
-  .nightwatch-field h2 { font-size: 21px; margin-block: 12px; }
-  .nightwatch-field :is(button, input, select, summary, .field-back, .field-job) { min-height: 44px; }
-  .field-welcome { padding-block: 6px 14px; }
-  .field-welcome p, .field-notifications p, .field-account, .field-detail p, .field-detail li { color: #bfced0; font-size: 14px; line-height: 1.55; }
-  .field-account { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
-  .field-sign-in { max-width: 440px; }
-  .field-sign-in input { font-size: 16px !important; }
+  .nightwatch-field > header {
+    position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: max(9px, env(safe-area-inset-top)) clamp(10px, 3vw, 24px) 9px;
+    background: var(--surface); border-bottom: 1px solid var(--line);
+  }
+  .field-brand, .field-head-actions { display: flex; align-items: center; gap: 7px; }
+  .nightwatch-field > header h1 { font-size: clamp(14px, 4.2vw, 20px); line-height: 1.05; }
+  .field-head-actions .theme-toggle { color: var(--teal); }
+  .nightwatch-field main { width: min(100%, 665px); margin: auto; padding: 15px 14px max(24px, env(safe-area-inset-bottom)); }
+  .nightwatch-field h2 { font-size: 23px; letter-spacing: -.025em; }
+  .nightwatch-field :is(button, input, select, summary, .field-back, .field-job, .field-control-link) { min-height: 44px; }
+  .field-welcome {
+    margin-top: clamp(9px, 5vw, 28px); padding: 19px 16px; border: 1px solid var(--line);
+    border-radius: 10px; background: var(--surface); box-shadow: var(--shadow);
+  }
+  .field-welcome-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 7px; background: var(--tint); color: var(--teal); }
+  .field-welcome h2 { margin: 12px 0 5px; }
+  .field-welcome p, .field-notifications p, .field-account, .field-detail p, .field-detail li { color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .field-account { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; }
+  .field-sign-in { max-width: 440px; margin-top: 9px; }
+  .field-sign-in input, .field-detail .workflow-actions textarea { font-size: 16px; }
+  .field-sign-in .primary-btn { min-width: 96px; }
+  .field-shift { margin: 10px 0 18px; padding: 14px; border: 1px solid var(--line); border-radius: 9px; background: var(--tint); }
+  .shift-heading, .field-shift > p, .shift-actions { display: flex; align-items: center; gap: 9px; }
+  .shift-heading > svg { color: var(--teal); }
+  .shift-heading span { color: var(--quiet); font-size: 10px; font-weight: 750; letter-spacing: .12em; }
+  .nightwatch-field .shift-heading h2 { margin: 0; }
+  .field-shift > p { color: var(--muted); margin-top: 6px; font-size: 14px; }
+  .shift-actions { flex-wrap: wrap; margin-top: 11px; }
+  .shift-actions button { flex: 1; }
+  .inbox-title { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; }
+  .inbox-title svg { color: var(--teal); }
+  .field-empty { color: var(--muted); font-size: 14px; padding: 12px 0; }
+  .field-inbox-group > h3 { margin: 12px 0 6px; color: var(--muted); font-size: 13px; }
+  .field-job { display: block; margin-bottom: 8px; padding: 11px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); color: var(--text); text-decoration: none; }
+  .field-job:hover { border-color: var(--teal); }
+  .field-job-head, .field-job footer, .field-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .field-job-head > span:first-child { font: 650 12px var(--mono); overflow-wrap: anywhere; }
+  .field-job h3 { font-size: 18px; margin-block: 4px; }
+  .field-job p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; color: var(--muted); }
+  .field-job footer { margin-top: 8px; color: var(--teal); font-size: 12px; }
+  .field-urgent { margin-left: 7px; color: var(--coral); font-size: 12px; }
   .field-notifications { border-block: 1px solid var(--line); margin: 12px 0 15px; }
   .field-notifications summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
   .field-notifications summary span { margin-left: auto; color: var(--teal); font-size: 12px; }
-  .field-notifications p { margin-bottom: 8px; }
-  .field-notifications button { margin-bottom: 8px; }
-  .field-inbox-group > h3 { margin: 13px 0 6px; font-size: 13px; color: var(--muted); }
-  .field-job { display: block; border: 1px solid #344b53; background: #14252c; border-radius: 8px; padding: 11px; margin-bottom: 8px; }
-  .field-job-head, .field-job footer, .field-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .field-job-head > span:first-child { font: 650 12px var(--mono); overflow-wrap: anywhere; }
-  .field-job h3 { font-size: 17px; margin-block: 4px; }
-  .field-job p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; color: #bfced0; }
-  .field-job footer { margin-top: 8px; color: var(--teal); font-size: 12px; }
-  .field-urgent { margin-left: 7px; color: #ffc6a9; font-size: 11px; }
-  .field-back { display: inline-flex; align-items: center; gap: 6px; color: var(--teal) !important; }
+  .field-notifications p, .field-notifications button { margin-bottom: 8px; }
+  .field-back { display: inline-flex; align-items: center; gap: 6px; color: var(--teal); font-weight: 650; }
   .field-detail h2 { margin-block: 3px 5px; }
   .field-assignee { margin: 3px 0 12px; }
-  .field-instructions { padding: 12px; background: #18333a; border-radius: 7px; }
-  .field-instructions h3:not(:first-child) { margin-top: 8px; }
+  .field-instructions { padding: 12px; background: var(--tint); border-radius: 7px; }
+  .field-instructions h3 { font-size: 15px; }
+  .field-instructions h3:not(:first-child) { margin-top: 9px; }
   .field-instructions p, .field-detail p { overflow-wrap: anywhere; white-space: pre-wrap; }
-  .field-detail .workflow-actions { margin-block: 6px; }
-  .field-detail .workflow-actions textarea { font-size: 16px; }
+  .field-detail .workflow-actions { margin-block: 8px; }
+  .field-detail .workflow-actions .primary-btn { flex-grow: 1; min-height: 47px; }
   .field-facts { padding-top: 10px; border-top: 1px solid var(--line); }
   .field-facts h3 { font-size: 15px; }
   .field-facts summary { display: flex; align-items: center; color: var(--teal); cursor: pointer; font-size: 14px; }
   .field-facts ul { padding-left: 20px; margin-top: 5px; }
-  .field-invite { overflow-wrap: anywhere; }
-  .delivery-state, .assignment-approved { background: #1a3338; border-radius: 4px; padding: 6px; }
-}
-
-
-@layer workspace {
-  .field-shift { margin: 12px 0 20px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #14252c); }
-  .shift-heading, .field-shift > p, .shift-actions { display: flex; align-items: center; gap: 9px; }
-  .shift-heading > svg { color: var(--teal); }
-  .shift-heading span { color: var(--muted); font-size: 11px; letter-spacing: .08em; }
-  .nightwatch-field .shift-heading h2 { margin: 1px 0 0; }
-  .field-shift > p { color: var(--muted); margin: 7px 0; font-size: 14px; }
-  .shift-actions { flex-wrap: wrap; margin-top: 10px; }
+  @media (max-width: 500px) { .field-head-actions .theme-toggle span, .field-control-link span { display: none; } }
 }

@@ -16,6 +16,7 @@ import type { Scope } from './NetworkMap.tsx'
 import { comparePlans, loadPractice, loadUpload, practiceNames, recordedSnapshot, registerInvestigationDataset } from './datasets.ts'
 import type { LoadedRecording } from './datasets.ts'
 import { practiceLabel, stamp } from './format.ts'
+import { BrandMark, ThemeToggle, useTheme } from './Theme.tsx'
 import './workspace.css'
 
 type Demo = { stage: 'intro' | 'first-replay' | 'first-failure' | 'cluster-replay' | 'cluster'; first: Incident; last: Incident }
@@ -47,6 +48,9 @@ export function App() {
   const [index, setIndex] = useState(0)
   const [selected, setSelected] = useState<string | null>(null)
   const [inspectorOpen, setInspectorOpen] = useState(false)
+  const [queueCollapsed, setQueueCollapsed] = useState(false)
+  const inspectorToggle = useRef<HTMLButtonElement>(null)
+  const theme = useTheme()
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [focusRequest, setFocusRequest] = useState(0)
   const [playing, setPlaying] = useState(false)
@@ -66,6 +70,8 @@ export function App() {
   const at = data?.times[index] ?? 0
   const current = snapshot?.at === at ? snapshot : null
   const alerts = current?.alerts ?? noAlerts
+  const recent = useMemo(() => incidents.filter((incident) => incident.clearedAt !== null && incident.clearedAt <= at)
+    .sort((a, b) => b.detectedAt - a.detectedAt).slice(0, 3), [incidents, at])
   const system = data?.systems.find((item) => item.id === scope.systemId)
   const editable = Boolean(data && at === data.now && !demo && !playing)
   const dismissed = new Set(editable && data ? alerts.filter((alert) => cases.get(caseKey(caseFromAlert(data, alert, at)))?.stage === 'dismissed').map((alert) => alert.assetId) : [])
@@ -240,6 +246,20 @@ export function App() {
     setIndex(value)
   }
 
+  function replay(event: Incident) {
+    if (!data) return
+    const atIndex = data.times.indexOf(event.detectedAt)
+    if (atIndex < 0) return
+    scrub(atIndex)
+    setTimelineOpen(true)
+    select(event.assetId)
+  }
+
+  function closeInspector() {
+    setInspectorOpen(false)
+    inspectorToggle.current?.focus()
+  }
+
   const facility = scope.facilityId ? data?.facilities.get(scope.facilityId) : undefined
   const leaf = selected && selected !== scope.systemId && selected !== scope.facilityId
     ? data?.assets.get(selected)?.id ?? 'Truck yard' : null
@@ -251,7 +271,7 @@ export function App() {
   ]
   return <div className="operator-shell">
     <header className="operator-top">
-      <h1 className="operator-brand"><Activity size={21} strokeWidth={2.4} /><span>NIGHTWATCH</span></h1>
+      <div className="operator-brand"><BrandMark /><div><h1>NIGHTWATCH</h1><span>FIELD ATLAS</span></div></div>
       <div className="operator-recording">
         <label className="operator-dataset"><Database size={15} /><select aria-label="Dataset" value={data?.name ?? ''} onChange={(event) => void load(() => loadPractice(event.target.value), 'practice dataset')}>
           {!data && <option value="" disabled>Choose a dataset</option>}
@@ -260,7 +280,7 @@ export function App() {
         </select></label>
         {data && <span className="operator-time"><Clock3 size={14} /> <time dateTime={new Date(at * 1000).toISOString()}>{stamp(at)}</time></span>}
       </div>
-      <div className="operator-actions"><a className="field-link" aria-label="Field desk" title="NIGHTWATCH Field" href="/field"><ClipboardList size={17} /></a>
+      <div className="operator-actions"><ThemeToggle {...theme} /><a className="field-link" aria-label="Field desk" title="NIGHTWATCH Field" href="/field"><ClipboardList size={17} /><span>Field</span></a>
         <details className="control-account">
           <summary className="field-link" aria-label="Control-room account" title="Control-room account"><LockKeyhole size={16} /></summary>
           <div>{workflow.person ? <><p>{workflow.person.name}</p><button className="small-btn" onClick={() => void workflow.signOut().catch((error) => setError(error.message))}>Sign out</button></> :
@@ -286,10 +306,12 @@ export function App() {
           {!playing && <button className="primary-btn" onClick={demoNext}>{demo.stage === 'intro' ? 'Replay the lead-up' : demo.stage === 'first-failure' && demo.first !== demo.last ? 'Show shared fleet pressure' : 'Compare responses'}<ArrowRight size={15} /></button>}
           <button className="icon-btn" aria-label="Exit demo" onClick={() => { setDemo(null); setPlaying(false) }}><X size={16} /></button>
         </div>}
-        <div className={'operator-console' + (inspectorOpen ? ' with-inspector' : '')}>
-          <AlertRail alerts={alerts} dismissed={dismissed} selected={selected} onAlert={select} />
+        <div className={'operator-console' + (inspectorOpen ? ' with-inspector' : '') + (queueCollapsed ? ' queue-collapsed' : '')}>
+          <AlertRail alerts={alerts} dismissed={dismissed} selected={selected} collapsed={queueCollapsed} loading={!current} recent={recent}
+            onAlert={select} onReplay={replay} onToggle={() => setQueueCollapsed((value) => !value)} />
           <section className="operator-stage" aria-label="Water network">
             <div className="stage-toolbar">
+              <div className="map-title"><span>NETWORK</span><strong>Atlas</strong></div>
               <nav className="breadcrumbs" aria-label="Network breadcrumb">
                 {trail.map((crumb, i) => <span key={crumb.id ?? 'all'}>
                   {i > 0 && <ChevronRight size={12} aria-hidden="true" />}
@@ -297,14 +319,14 @@ export function App() {
                 </span>)}
               </nav>
               {inspectorOpen && <a className="stage-mobile-inspect" href="#asset-inspector">Details</a>}
-              <button className="stage-inspector-toggle" aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen(!inspectorOpen)}><PanelRight size={16} /></button>
+              <button ref={inspectorToggle} className="stage-inspector-toggle" aria-label={inspectorOpen ? 'Hide inspector' : 'Show inspector'} aria-expanded={inspectorOpen} onClick={() => setInspectorOpen(!inspectorOpen)}><PanelRight size={16} /></button>
             </div>
             <div className="map-container">
-              <SpatialView focusRequest={focusRequest} data={data} at={at} scope={scope} selected={selected} alerts={alerts} onSelect={select} onFocus={select} />
+              <SpatialView night={theme.night} focusRequest={focusRequest} data={data} at={at} scope={scope} selected={selected} alerts={alerts} onSelect={select} onFocus={select} />
               {elsewhere && system && <div className="stage-notice"><span>No active incidents in {system.id} · {verified.length} elsewhere</span><button onClick={() => select(elsewhere.assetId)}>Go to priority <ArrowRight size={13} /></button></div>}
             </div>
           </section>
-          {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={() => setInspectorOpen(false)} onBriefing={(alert, text) => setFieldDraft({ key: caseKey(caseFromAlert(data, alert, at)), text })} workflow={(alert, response) => {
+          {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={closeInspector} onBriefing={(alert, text) => setFieldDraft({ key: caseKey(caseFromAlert(data, alert, at)), text })} workflow={(alert, response) => {
             const incident = caseFromAlert(data, alert, at)
             const key = caseKey(incident)
             return <IncidentWorkflow key={key} incident={incident} entry={cases.get(key)} available={workflow.available} editable={editable} onUpdate={async (change) => {
@@ -332,7 +354,7 @@ export function App() {
             setTimelineOpen(true)
           }}>{playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}</button>
           <div className="timeline-track" id="recording-controls" hidden={!timelineOpen}><input type="range" aria-label="Recorded timestamp" aria-valuetext={stamp(at)} min="0" max={data.times.length - 1} value={index} onChange={(event) => scrub(+event.target.value)} /></div>
-          <span className="timeline-state">{at === data.now ? 'Latest recording' : 'Historical replay'}</span>
+          <span className="timeline-state"><span className="status-dot" />{at === data.now ? 'Latest recording' : 'Historical replay'}</span>
           {at !== data.now && <button className="small-btn" onClick={() => scrub(data.times.length - 1)}>Latest</button>}
         </section>
       </> : <section className="panel welcome"><div className="empty-glyph"><Database size={26} /></div><h2>Load a network</h2><p>Select the three EOG files together to build the network and analyze its recorded telemetry.</p><button className="primary-btn" onClick={() => input.current?.click()}><Upload size={15} /> Import dataset</button></section>}
