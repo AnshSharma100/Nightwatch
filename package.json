@@ -11,7 +11,8 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "validate:eog": "node --experimental-strip-types scripts/validate-eog.ts",
     "test:browser": "playwright test",
-    "validate:plans": "node --experimental-strip-types scripts/validate-plans.ts"
+    "validate:plans": "node --experimental-strip-types scripts/validate-plans.ts",
+    "setup:field": "node scripts/setup-field.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.0",
@@ -19,13 +20,16 @@
     "lucide-react": "^0.577.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.183.0"
+    "three": "^0.183.0",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.65.0",
+    "@types/node": "^26.6.6",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/three": "^0.183.0",
+    "@types/web-push": "^3.6.4",
     "typescript": "^5.9.3",
     "vite": "^8.3.6"
   },
