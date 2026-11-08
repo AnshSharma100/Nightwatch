@@ -10,11 +10,11 @@
 
 ## Verification
 
-- Unit/integration suite: 32 passed; the PostgreSQL test is skipped locally without its dedicated test database. CI runs that test against PostgreSQL.
+- Unit/integration suite: 33 passed; the PostgreSQL test is skipped locally without its dedicated test database. CI runs that test against PostgreSQL.
 - Browser suite: 17 passed, including custom plan → control approval → assigned phone inbox → acknowledgment → completion, simulation controls, forecast stability, phone widths, AI form interaction and disclosure behavior.
 - Official input rehearsal: imported network.json, ops.json and telemetry.csv from the supplied October 8 snapshot through the browser; reviewed pump failure, pump degradation and pipeline leak; calculated a feasible manual alternative with NVIDIA disabled. Separate tests import previously unknown asset/system IDs. This is generalization rehearsal, not a claim to have seen the judges' private dataset.
 - Offline reference validation: full-week 23 episodes; zero missed/extra reference events or active-set mismatches. EVENT_9 and shared-fleet plan checks pass. Answer keys are used only by offline reference validation, never by the running app.
-- Live NVIDIA hosted inference: repair-versus-truck, late-arriving truck, field completion and two-trucks-to-one-facility questions completed with actual tool calls. In the S4 comparison the proposed plan cost $7,469.18 versus $3,082.65 for the best found, a $4,386.53 difference. It prevents automatic shut-in at Facility A while allowing it at C and D relative to the recommendation. These are computed results, not a scripted advantage.
+- Live NVIDIA hosted inference: repair-versus-truck, late-arriving truck, field completion, the original S2 incident and two-trucks-to-one-facility questions completed with actual tool calls. In the S4 comparison the proposed plan cost $7,469.18 versus $3,082.65 for the best found, a $4,386.53 difference. It prevents automatic shut-in at Facility A while allowing it at C and D relative to the recommendation. These are computed results, not a scripted advantage. Malformed tool-call structure gets one retry before any rejected calls are executed; bounded answer corrections were exercised in real inference.
 - Production build and TypeScript checks pass. The existing Three.js large-chunk advisory remains.
 - Real mobile push delivery: the developer reported successfully receiving push notifications on their phone. Automated browser permission/push tests remain mocks; real VAPID encryption/signing has a separate test. We have not inferred a particular phone OS/version or repeated that physical-device test in this change.
 

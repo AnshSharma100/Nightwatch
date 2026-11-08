@@ -146,6 +146,15 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
             <b>{outcome ? money(outcome.costs.total) : '—'}</b>
           </button>)}
         </div>
+        <div className="plan-approval">
+          <label>Review assignment for<select aria-label="Plan approval facility" value={site} onChange={(event) => setSite(event.target.value)}>
+            {scenario.failures.map(({ facility }) => <option key={facility.id}>{facility.id}</option>)}
+          </select></label>
+          <p>{branch.label} · {branch.outcome ? money(branch.outcome.costs.total) : 'Not calculated'} across this system.</p>
+          <button className="primary-btn" disabled={!branch.outcome || running || (selectedBranch === 'operator' && dirty) || demo || scenario.at !== data.now}
+            onClick={() => { if (branch.outcome) onApprove(branch.outcome, site) }}>Use this plan for approval</button>
+          <p>{demo || scenario.at !== data.now ? 'Historical exploration only. Open the latest recording to approve field work.' : 'Returns to Operations for incident confirmation, recipient selection and editable instructions. Nothing is sent yet.'}</p>
+        </div>
         <details className="lab-rules"><summary>How this simulation works</summary>
           <p><strong>Run simulation</strong> calculates a future. <strong>Play</strong> animates that result; it never sends an assignment.</p>
           <p>Trucks remove produced water and buy time. They do not repair pumps. Repairs occur on the dataset’s modeled schedule, measured from failure onset.</p>
@@ -163,15 +172,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
               {dirty && <small>Changes need a new simulation</small>}</div>
           </div>
         </details>
-        <div className="plan-approval">
-          <label>Review assignment for<select aria-label="Plan approval facility" value={site} onChange={(event) => setSite(event.target.value)}>
-            {scenario.failures.map(({ facility }) => <option key={facility.id}>{facility.id}</option>)}
-          </select></label>
-          <p>{branch.label} · {branch.outcome ? money(branch.outcome.costs.total) : 'Not calculated'} across this system.</p>
-          <button className="primary-btn" disabled={!branch.outcome || running || (selectedBranch === 'operator' && dirty) || demo || scenario.at !== data.now}
-            onClick={() => { if (branch.outcome) onApprove(branch.outcome, site) }}>Use this plan for approval</button>
-          <p>{demo || scenario.at !== data.now ? 'Historical exploration only. Open the latest recording to approve field work.' : 'Returns to Operations for incident confirmation, recipient selection and editable instructions. Nothing is sent yet.'}</p>
-        </div>
+
       </aside>
       <section className="lab-stage" aria-label="Simulated network">
         <div className="lab-pane-head"><div><span className="eyebrow">SIMULATED NETWORK</span><h2>{branch.label}</h2></div>
@@ -190,7 +191,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
       <aside className="lab-evidence" aria-label="Costs and operational outcomes" onPointerDownCapture={() => setPlaying(false)} onFocusCapture={() => setPlaying(false)}>
         <div className="lab-pane-head"><h2>Cost &amp; impact</h2></div>
         <div className="lab-evidence-body">
-          {savings !== null && <p className="lab-savings">{savings > .005 ? money(savings) + ' less than the operator plan' :
+          {savings !== null && <p className="lab-savings">{savings > .005 ? 'Recommended is ' + money(savings) + ' less than the operator plan' :
             savings < -.005 ? 'Operator plan costs ' + money(-savings) + ' less' : 'Operator and recommended plans tie'}</p>}
           <CostTable branches={branches} />
           <ConsequenceReview scenario={scenario} outcome={branch.outcome} label={branch.label}

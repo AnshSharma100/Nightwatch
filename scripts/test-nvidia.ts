@@ -24,9 +24,10 @@ if (!env.NVIDIA_API_KEY) {
   let recommended: number | undefined
   let alternative: number | undefined
   try {
+    const signal = AbortSignal.timeout(80_000)
     const explanation = await investigate(context, nvidiaCompletion({
       apiKey: env.NVIDIA_API_KEY, baseUrl: env.NVIDIA_BASE_URL, model: env.NVIDIA_MODEL,
-    }, AbortSignal.timeout(80_000)), (entry) => {
+    }, signal), (entry) => {
       if (entry.ok) {
         successful.add(entry.name)
         if (entry.name === 'compare_plans') {

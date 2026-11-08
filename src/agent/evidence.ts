@@ -44,7 +44,8 @@ export function toolFacts(entry: AuditEntry): string[] {
       facts.push(`The recommended plan reduces estimated cost by ${dollars(value.baseline.costs_usd.total - value.recommended.costs_usd.total)} compared with no action.`)
       if (value.alternative) {
         const difference = value.alternative.costs_usd.total - value.recommended.costs_usd.total
-        facts.push(`The proposed alternative costs ${dollars(Math.abs(difference))} ${difference < 0 ? 'less' : 'more'} than the recommended plan in the same simulation.`)
+        facts.push(Math.abs(difference) < .005 ? `The proposed alternative costs the same as the recommended plan: ${dollars(value.alternative.costs_usd.total)} in the same simulation.` :
+          `The proposed alternative costs ${dollars(Math.abs(difference))} ${difference < 0 ? 'less' : 'more'} than the recommended plan in the same simulation.`)
         const protectedSites = value.alternative.facilities.filter((site) => site.auto_shut_in_after_min === null && value.recommended.facilities.some((other) => other.facility_id === site.facility_id && other.auto_shut_in_after_min !== null)).map((site) => site.facility_id)
         const lostSites = value.alternative.facilities.filter((site) => site.auto_shut_in_after_min !== null && value.recommended.facilities.some((other) => other.facility_id === site.facility_id && other.auto_shut_in_after_min === null)).map((site) => site.facility_id)
         facts.push(`Compared with the recommended plan, the proposed alternative ${protectedSites.length ? 'prevents automatic shut-in at ' + protectedSites.join(', ') : 'does not prevent automatic shut-in at any additional facility'}${lostSites.length ? ', but allows automatic shut-in at ' + lostSites.join(', ') : ', with no additional facility automatically shutting in'}. These are simulated outcomes through repair, not actions already taken.`)

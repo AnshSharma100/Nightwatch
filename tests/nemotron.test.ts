@@ -226,8 +226,8 @@ test('requires comparison of the actual simulated alternative before publishing 
     return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', '{"explanation":"Compare the plans.","fact_ids":"F1"}')] }
   }, (entry) => audit.push(entry))
   assert.equal(audit.find((entry) => entry.name === 'answer_investigation')?.ok, false)
-  assert.match(result, /^The proposed alternative costs/)
-  assert.match(result, /Compared with the recommended plan/)
+  assert.match(result, /^Compare the plans/)
+  assert.doesNotMatch(result, /\$0.00 more/)
 })
 
 
@@ -256,4 +256,24 @@ test('rejects model attempts to operate equipment or execute arbitrary tools', a
     ? { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('dispatch_truck'), call('execute_python')] }
     : { role: 'assistant', content: 'I can investigate evidence, but only the operator can approve a field assignment. [[F1]]' }, (entry) => audit.push(entry))
   assert.deepEqual(audit.filter((entry) => !entry.ok).map((entry) => entry.name), ['dispatch_truck', 'execute_python'])
+})
+
+test('retries malformed NVIDIA call structure once without executing rejected calls', async () => {
+  const { nvidiaCompletion } = await import('../server/nemotron.ts')
+  let attempts = 0
+  const request = (async (_url, init) => {
+    attempts++
+    if (attempts === 2) assert.match(JSON.parse(String(init?.body)).messages.at(-1).content, /no calls from the rejected response were executed/)
+    return Response.json({ choices: [{ message: { role: 'assistant', content: null,
+      tool_calls: attempts === 1 ? [call('get_incidents'), call('get_incidents')] : [call('get_incidents')] } }] })
+  }) as typeof fetch
+  const result = await nvidiaCompletion({}, AbortSignal.timeout(1000), request)([{ role: 'user', content: 'Inspect the recording.' }], true)
+  assert.equal(attempts, 2)
+  assert.equal(result.tool_calls?.length, 1)
+  let invalid = 0
+  await assert.rejects(nvidiaCompletion({}, AbortSignal.timeout(1000), (async () => {
+    invalid++
+    return Response.json({ choices: [] })
+  }) as typeof fetch)([], true), /invalid assistant response/)
+  assert.equal(invalid, 2)
 })

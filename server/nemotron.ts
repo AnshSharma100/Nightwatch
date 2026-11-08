@@ -36,17 +36,26 @@ export function nvidiaCompletion(config: Configuration, signal: AbortSignal, req
   const model = config.model || defaultModel
   const options = model === defaultModel ? { chat_template_kwargs: { enable_thinking: false }, parallel_tool_calls: true } : {}
   return async (messages: Message[], mustUseTool: boolean) => {
-    const reply = await request(endpoint, {
-      method: 'POST', redirect: 'error',
-      headers: { Authorization: 'Bearer ' + config.apiKey, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model, messages, tools, tool_choice: mustUseTool ? 'required' : 'auto',
-        max_tokens: 3500, temperature: .2, stream: false, ...options,
-      }),
-      signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
-    })
-    if (!reply.ok || reply.status === 202) throw new Error('NVIDIA returned HTTP ' + reply.status + '. Check the configured key and model access.')
-    return parseCompletion(await reply.json())
+    let conversation = messages
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const reply = await request(endpoint, {
+        method: 'POST', redirect: 'error',
+        headers: { Authorization: 'Bearer ' + config.apiKey, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model, messages: conversation, tools, tool_choice: mustUseTool ? 'required' : 'auto',
+          max_tokens: 3500, temperature: .2, stream: false, ...options,
+        }),
+        signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+      })
+      if (!reply.ok || reply.status === 202) throw new Error('NVIDIA returned HTTP ' + reply.status + '. Check the configured key and model access.')
+      const payload: unknown = await reply.json()
+      try { return parseCompletion(payload) }
+      catch (error) {
+        if (attempt > 0) throw error
+        conversation = [...messages, { role: 'user', content: 'Your previous response had invalid function-call structure. Return at most six tool calls, each with a unique call ID and JSON-encoded arguments. Use only the available tools. Continue answering the original question; no calls from the rejected response were executed.' }]
+      }
+    }
+    throw new Error('NVIDIA returned invalid assistant output after correction.')
   }
 }
 

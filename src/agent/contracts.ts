@@ -21,7 +21,7 @@ const tool = (name: string, description: string, parameters = object({})) =>
 const assetId = { type: 'string', description: 'Exact asset ID in the current system' }
 export const tools = [
   tool('answer_investigation', 'Answer the actual question directly, then explain why. fact_ids provides exact computed quantities and outcomes in expandable evidence. Do not replace the direct answer with a recommendation report.', object({
-    explanation: { type: 'string', maxLength: 5000, description: 'Required direct qualitative answer, two to five sentences. No numeric literals, percentages or currency amounts. Put supporting numerical facts in fact_ids. Explain the specific tradeoff or operating rule in plain language.' },
+    explanation: { type: 'string', maxLength: 900, description: 'Required direct qualitative answer, two to five sentences. No numeric literals, percentages or currency amounts. Put supporting numerical facts in fact_ids. Explain the specific tradeoff or operating rule in plain language.' },
     fact_ids: { type: 'string', maxLength: 2000, description: 'Comma-separated exact F IDs from answer_facts, for example F1,F3,F8. Choose only the facts needed to answer the question.' },
   })),
   tool('get_operating_rules', 'Read authoritative simulation and field-work rules: truck mitigation, repair timing, automatic shut-in, late arrival, playback, and assignment completion.'),
