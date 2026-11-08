@@ -10,10 +10,11 @@ import { money, stamp } from './format.ts'
 interface Selection { data: Dataset; at: number; systemId: string; facilityId?: string; manual?: Plan }
 interface Result { summary?: string; trace?: AuditEntry[]; recommendedCost?: number; error?: string }
 
-function alternativeCost(audit: AuditEntry[]) {
-  const entry = audit.findLast((item) => item.ok && item.name === 'simulate_alternative')
-  const value = (entry?.result as { outcome?: { costs_usd?: { total?: number } } } | undefined)?.outcome?.costs_usd?.total
-  return typeof value === 'number' && Number.isFinite(value) ? value : null
+function toolCost(audit: AuditEntry[], name: string, field: 'outcome' | 'recommended') {
+  type Cost = { costs_usd?: { total?: number } }
+  const entry = audit.findLast((item) => item.ok && item.name === name)
+  const value = (entry?.result as Partial<Record<typeof field, Cost>> | undefined)?.[field]?.costs_usd?.total
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
 function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: (text: string) => void }) {
@@ -28,7 +29,8 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
   const request = useRef<AbortController | null>(null)
   const endpoint = '/api/nemotron'
   const system = context.data.systems.find((item) => item.id === context.systemId)
-  const cost = alternativeCost(audit)
+  const cost = toolCost(audit, 'simulate_alternative', 'outcome')
+  const recommendedCost = recommended ?? toolCost(audit, 'compare_plans', 'recommended')
   const enabled = status?.configured && status.authorized
 
   useEffect(() => {
@@ -88,19 +90,18 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
       onChange={(event) => setQuestion(event.target.value)} placeholder="What is driving the recommendation for this system?" /></label>
     <div className="investigator-buttons">
       {context.facilityId && (system?.fleetSize ?? 0) >= 2 && <button className="small-btn" disabled={!enabled || working}
-        onClick={() => setQuestion('What happens if I send trucks 1 and 2 to ' + context.facilityId + ' for one trip each now? Simulate that plan and compare it.')}>Test two trucks here</button>}
+        onClick={() => setQuestion('Compare sending both trucks to ' + context.facilityId + ' against the recommended plan. Simulate one trip each from truck slots 1 and 2 sent there now and explain the shared fleet tradeoff.')}>Test two trucks here</button>}
       <button className="small-btn" disabled={!enabled || working} onClick={() => setQuestion('Draft a field briefing for the current incidents using recorded evidence and the calculated response.')}>Draft field briefing</button>
       <button className="primary-btn" disabled={!enabled || working} onClick={() => void analyze()}>{working ? 'Investigating…' : 'Investigate with Nemotron'}</button>
     </div>
     {error && <p className="form-error" role="alert">{error}</p>}
-    {summary && <><p className="investigator-answer">{summary}</p>
-      {recommended !== undefined && <dl className="values">
-        <dt>Recommended simulated cost</dt><dd>{money(recommended)}</dd>
-        {cost !== null && <><dt>Alternative simulated cost</dt><dd>{money(cost)}</dd></>}
-      </dl>}
-      {onDraft && audit.some((entry) => entry.ok && entry.name === 'draft_briefing') && <div><button className="small-btn"
-        onClick={() => { onDraft(summary); setDrafted(true) }}>{drafted ? 'Draft available in Incident workflow' : 'Use as editable assignment draft'}</button></div>}
-    </>}
+    {summary && <p className="investigator-answer">{summary}</p>}
+    {(recommendedCost !== undefined || cost !== undefined) && <dl className="values" aria-label="Verified tool costs">
+      {recommendedCost !== undefined && <><dt>Recommended simulated cost</dt><dd>{money(recommendedCost)}</dd></>}
+      {cost !== undefined && <><dt>Alternative simulated cost</dt><dd>{money(cost)}</dd></>}
+    </dl>}
+    {summary && onDraft && audit.some((entry) => entry.ok && entry.name === 'draft_briefing') && <div><button className="small-btn"
+      onClick={() => { onDraft(summary); setDrafted(true) }}>{drafted ? 'Draft available in Incident workflow' : 'Use as editable assignment draft'}</button></div>}
     {audit.length > 0 && <details className="investigator-trace"><summary>Tool trace · {audit.length} calls</summary><ol aria-label="Nemotron tool calls">
       {audit.map((entry, i) => <li key={i}><details><summary>{entry.name} · {entry.ok ? 'complete' : 'tool error'}</summary>
         <pre>{JSON.stringify({ input: entry.input, output: entry.result }, null, 2)}</pre></details></li>)}

@@ -147,7 +147,7 @@ function dispatch(context: Investigation, call: Call, alternatives: Map<string, 
 
 export async function investigate(
   context: Investigation,
-  complete: (messages: Message[], first: boolean) => Promise<Completion>,
+  complete: (messages: Message[], mustUseTool: boolean) => Promise<Completion>,
   onAudit: (entry: AuditEntry) => void,
   question = 'Investigate the current recorded failures and explain the response tradeoffs for the selected system.',
 ) {
@@ -171,18 +171,33 @@ export async function investigate(
   let requestedQualitativeRewrite = false
   const successful = new Set<string>()
   const alternatives = new Map<string, Outcome>()
-  for (let round = 0; round < 8; round++) {
-    const response = await complete(messages, round === 0)
+  const required = context.scenario.failures.length ? ['get_incidents', 'forecast_shutdown', 'compare_plans'] : ['get_incidents']
+  const roundLimit = 9
+  let reminders = 0
+  let mustUseTool = true
+  for (let round = 0; round < roundLimit; round++) {
+    const response = await complete(messages, mustUseTool)
+    mustUseTool = false
     const calls = response.tool_calls ?? []
     if (calls.length === 0) {
-      const required = context.scenario.failures.length ? ['get_incidents', 'forecast_shutdown', 'compare_plans'] : ['get_incidents']
-      if (required.some((name) => !successful.has(name))) throw new Error('The model did not finish checking incident evidence and the applicable forecast and plan costs.')
+      const missing = required.filter((name) => !successful.has(name))
+      if (missing.length) {
+        if (reminders >= 2 || round >= roundLimit - 2) {
+          throw new Error('The model did not finish checking incident evidence and the applicable forecast and plan costs.')
+        }
+        if (response.content?.trim()) messages.push(response)
+        messages.push({ role: 'user', content: 'Continue the investigation. Required tool results still missing: ' +
+          missing.join(', ') + '. Call the missing tools and complete the original operator request, including any requested simulation, before answering.' })
+        reminders++
+        mustUseTool = true
+        continue
+      }
       if (!response.content?.trim()) throw new Error('Nemotron returned no investigation summary.')
       const prose = response.content.trim().replace(/^[ \t]*\d+[.)][ \t]+/gm, '• ')
       if (!containsQuantities(prose)) return prose
       const excerpt = [...sentences.segment(prose)].filter(({ segment }) => !containsQuantities(segment))
         .map(({ segment }) => segment.trim()).filter(Boolean).join(' ')
-      if (requestedQualitativeRewrite || round === 7) {
+      if (requestedQualitativeRewrite || round === roundLimit - 1) {
         const safe = excerpt.length >= 35 ? excerpt : firstQualitativeExcerpt
         if (safe.length >= 35) return safe + '\n\nNIGHTWATCH filtered numerical prose. See the tool results for verified measurements and costs.'
         throw new Error('Nemotron returned numerical claims in prose. The verified measurements and costs are in the tool trace.')

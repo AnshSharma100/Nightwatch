@@ -45,12 +45,18 @@ test('executes real analysis tools on the frozen snapshot and returns model expl
 
 test('passes tool errors back to the model and requires an evidence trail', async () => {
   const audit: AuditEntry[] = []
-  await assert.rejects(investigate(context(), async (messages, first) => {
-    if (first) return { role: 'assistant', content: null, tool_calls: [call('get_sensor_window', '{"asset_id":"unknown","metric":"level_pct"}')] }
-    const result = messages.at(-1)!
-    assert.match(result.content ?? '', /asset in the current system/)
+  let round = 0
+  await assert.rejects(investigate(context(), async (messages, mustUseTool) => {
+    round++
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_sensor_window', '{"asset_id":"unknown","metric":"level_pct"}')] }
+    if (round === 2) assert.match(messages.at(-1)!.content ?? '', /asset in the current system/)
+    else {
+      assert.equal(mustUseTool, true)
+      assert.match(messages.at(-1)!.content ?? '', /Required tool results still missing/)
+    }
     return { role: 'assistant', content: 'Unsupported conclusion' }
   }, (entry) => audit.push(entry)), /did not finish checking/)
+  assert.equal(round, 4)
   assert.deepEqual(audit.map(({ name, ok }) => ({ name, ok })), [{ name: 'get_sensor_window', ok: false }])
 })
 
@@ -97,6 +103,7 @@ test('scopes registered recordings to the operator session and rejects invalid m
     assert.equal(init?.redirect, 'error')
     const payload = JSON.parse(String(init?.body))
     assert.equal(payload.tool_choice, 'required')
+    assert.equal(payload.chat_template_kwargs.enable_thinking, false)
     assert.ok(payload.tools.some((tool: { function: { name: string } }) => tool.function.name === 'simulate_alternative'))
     return Response.json({ choices: [{ message: { role: 'assistant', content: null, tool_calls: [call('get_incidents')] } }] })
   }) as typeof fetch
@@ -132,4 +139,24 @@ test('preserves safe model prose and omits repeated unsupported quantities', asy
   assert.match(result, /ties up the shared fleet/)
   assert.match(result, /filtered numerical prose/)
   assert.doesNotMatch(result, /999999/)
+})
+
+
+test('asks for the missing evidence when the model ends an investigation early', async () => {
+  let round = 0
+  const audit: AuditEntry[] = []
+  const result = await investigate(context(), async (messages, mustUseTool) => {
+    round++
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents')] }
+    if (round === 2) return { role: 'assistant', content: 'Premature conclusion.' }
+    if (round === 3) {
+      assert.equal(mustUseTool, true)
+      assert.match(messages.at(-1)!.content ?? '', /missing: forecast_shutdown, compare_plans/)
+      return { role: 'assistant', content: null, tool_calls: [call('compare_plans'), call('forecast_shutdown')] }
+    }
+    assert.equal(mustUseTool, false)
+    return { role: 'assistant', content: 'The recorded fault and verified plan comparison explain the response.' }
+  }, (entry) => audit.push(entry))
+  assert.match(result, /verified plan comparison/)
+  assert.deepEqual(audit.map(({ name }) => name), ['get_incidents', 'compare_plans', 'forecast_shutdown'])
 })

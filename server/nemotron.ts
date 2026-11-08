@@ -33,13 +33,15 @@ export function nvidiaCompletion(config: Configuration, signal: AbortSignal, req
   const base = new URL(config.baseUrl || 'https://integrate.api.nvidia.com/v1')
   if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('NVIDIA_BASE_URL must be an HTTPS API base URL.')
   const endpoint = base.href.replace(/\/+$/, '') + '/chat/completions'
-  return async (messages: Message[], first: boolean) => {
+  const model = config.model || defaultModel
+  const options = model === defaultModel ? { chat_template_kwargs: { enable_thinking: false }, parallel_tool_calls: true } : {}
+  return async (messages: Message[], mustUseTool: boolean) => {
     const reply = await request(endpoint, {
       method: 'POST', redirect: 'error',
       headers: { Authorization: 'Bearer ' + config.apiKey, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: config.model || defaultModel, messages, tools, tool_choice: first ? 'required' : 'auto',
-        max_tokens: 3500, temperature: .2, stream: false,
+        model, messages, tools, tool_choice: mustUseTool ? 'required' : 'auto',
+        max_tokens: 3500, temperature: .2, stream: false, ...options,
       }),
       signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
     })
