@@ -41,7 +41,9 @@ for (const kind of ['well stops', 'repeat trips'] as const) {
     const trips = lab.getByLabel('Trips', { exact: true })
     await expect(trips).toHaveCount(expected.plan.jobs.length)
     for (let i = 0; i < expected.plan.jobs.length; i++) await expect(trips.nth(i)).toHaveValue(String(expected.plan.jobs[i].trips))
-    await expect(lab.getByLabel('Well', { exact: true })).toHaveCount(expected.plan.shutIns.length)
+    const wells = lab.getByRole('combobox', { name: 'Well', exact: true })
+    await expect(wells).toHaveCount(expected.plan.shutIns.length)
+    for (let i = 0; i < expected.plan.shutIns.length; i++) await expect(wells.nth(i)).toHaveValue(expected.plan.shutIns[i].wellId)
     if (process.env.NIGHTWATCH_SCREENSHOT_DIR) await page.screenshot({ path: process.env.NIGHTWATCH_SCREENSHOT_DIR + '/copy-' + kind.replace(' ', '-') + '.png' })
   })
 }
