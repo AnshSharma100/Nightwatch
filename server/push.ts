@@ -33,24 +33,26 @@ const sendWebPush: PushSend = (target, payload, config) => webPush.sendNotificat
 })
 
 export function pushService(store: WorkspaceStore, config: PushConfig | null, publicOrigin?: string, deliver: PushSend = sendWebPush) {
+  const sending = new Set<Promise<void>>()
   async function subscriptionApi(request: IncomingMessage, response: ServerResponse, session: Session) {
     if (session.person.role === 'control') { send(response, 403, { error: 'Field sign-in is required.' }); return }
     if (request.method === 'GET') {
       send(response, 200, { publicKey: config?.publicKey ?? null,
-        registered: store.read().subscriptions.some((item) => item.session === session.digest) })
+        registered: (await store.read()).subscriptions.some((item) => item.session === session.digest) })
       return
     }
     if (request.method !== 'POST' && request.method !== 'DELETE') { send(response, 405, { error: 'Expected GET, POST or DELETE.' }); return }
     const body = await requestBody(request, 8192, publicOrigin)
     if (request.method === 'DELETE') {
-      store.update((state) => { state.subscriptions = state.subscriptions.filter((item) => item.session !== session.digest) })
+      await store.update((state) => { state.subscriptions = state.subscriptions.filter((item) => item.session !== session.digest) })
       send(response, 200, { registered: false })
       return
     }
     if (!config) { send(response, 503, { error: 'Web Push is not configured on the server.' }); return }
     const value = subscription(body)
     if (!value) { send(response, 400, { error: 'Invalid or unsupported browser subscription.' }); return }
-    const registered = store.update((state) => {
+    const registered = await store.update((state) => {
+      if (!state.sessions.some((item) => item.digest === session.digest && item.expires > Date.now())) return null
       const existing = state.subscriptions.find((item) => item.value.endpoint === value.endpoint)
       if (existing && existing.personId !== session.person.id &&
           state.sessions.some((item) => item.digest === existing.session && item.expires > Date.now())) return false
@@ -58,13 +60,12 @@ export function pushService(store: WorkspaceStore, config: PushConfig | null, pu
       state.subscriptions.push({ session: session.digest, personId: session.person.id, value })
       return true
     })
+    if (registered === null) { send(response, 401, { error: 'This field session has ended.' }); return }
     send(response, registered ? 200 : 409, registered ? { registered } : { error: 'This device is subscribed to another account. Sign out there or reset this browser subscription.' })
   }
 
   async function dispatch(id: string) {
-    const initial = store.read().deliveries.find((item) => item.id === id)
-    if (initial?.status !== 'queued') return
-    const work = store.update((state) => {
+    const work = await store.update((state) => {
       const row = state.deliveries.find((item) => item.id === id)
       if (!row || row.status !== 'queued') return
       const entry = state.entries.find((item) => item.assignment?.id === row.assignmentId)
@@ -92,7 +93,7 @@ export function pushService(store: WorkspaceStore, config: PushConfig | null, pu
         return { target, accepted: false, expired: status === 404 || status === 410 }
       }
     }))
-    store.update((state) => {
+    await store.update((state) => {
       const row = state.deliveries.find((item) => item.id === id)
       if (!row) return
       row.accepted = results.filter((item) => item.accepted).length
@@ -105,13 +106,16 @@ export function pushService(store: WorkspaceStore, config: PushConfig | null, pu
   }
 
   function schedule(id: string) {
-    void dispatch(id).catch(() => console.warn('NIGHTWATCH could not update Web Push delivery status.'))
+    const promise = dispatch(id).catch(() => console.warn('NIGHTWATCH could not update Web Push delivery status.'))
+    sending.add(promise)
+    void promise.finally(() => sending.delete(promise))
   }
 
-  function recover() {
-    for (const item of store.read().deliveries) if (item.status === 'queued') schedule(item.id)
+  async function recover() {
+    for (const item of (await store.read()).deliveries) if (item.status === 'queued') schedule(item.id)
   }
-  return { subscriptionApi, dispatch, schedule, recover }
+  async function close() { await Promise.all(sending) }
+  return { subscriptionApi, dispatch, schedule, recover, close }
 }
 
 export type PushService = ReturnType<typeof pushService>

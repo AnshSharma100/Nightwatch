@@ -50,7 +50,7 @@ function comparison(recording: Recording, input: ComparisonRequest): PlanCompari
   return { scenario, search, operator: plan ? simulate(scenario, plan) : null }
 }
 
-export function operationsHandler(recordings: OperationalRecordings, aliases: RecordingRegistry, auth: SessionAuth, origin?: string) {
+export function operationsHandler(recordings: OperationalRecordings, aliases: RecordingRegistry, auth: SessionAuth, origin?: string, requireControlImport = false) {
   return async (request: IncomingMessage, response: ServerResponse, url: URL) => {
     const path = url.pathname
     const method = request.method
@@ -59,14 +59,18 @@ export function operationsHandler(recordings: OperationalRecordings, aliases: Re
       return
     }
     if (path === '/api/datasets/import' && method === 'POST') {
+      if (requireControlImport && (await auth.session(request))?.person.role !== 'control') {
+        send(response, 403, { error: 'Sign in as a control-room operator to import a recording.' })
+        return
+      }
       const input = await requestBody(request, 65_000_000, origin)
       if (!isDatasetUpload(input)) { send(response, 400, { error: 'Supply the EOG network, operations and telemetry files.' }); return }
-      const { id, recording } = recordings.upload(input, request, response)
+      const { id, recording } = await recordings.upload(input, request, response)
       send(response, 201, open(id, recording))
       return
     }
     const match = /^\/api\/datasets\/([\w-]{1,109})(?:\/(snapshot|compare|control))?$/.exec(path)
-    const recording = match && recordings.find(match[1], request)
+    const recording = match && await recordings.find(match[1], request)
     if (!match || !recording) { send(response, 404, { error: 'Recording not found for this browser.' }); return }
     const route = match[2]
     if (!route && method === 'GET') {
@@ -88,7 +92,7 @@ export function operationsHandler(recordings: OperationalRecordings, aliases: Re
       return
     }
     if (route === 'control' && method === 'POST') {
-      const session = auth.session(request)
+      const session = await auth.session(request)
       if (session?.person.role !== 'control') { send(response, 403, { error: 'Control-room sign-in is required.' }); return }
       await requestBody(request, 128, origin)
       send(response, 200, { id: aliases.attach(session.digest, recording) })

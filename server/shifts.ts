@@ -50,11 +50,11 @@ export function changeShift(state: State, session: Session, status: ShiftStatus,
 
 export function shiftHandler(store: WorkspaceStore, auth: SessionAuth, origin?: string) {
   return async (request: IncomingMessage, response: ServerResponse, url: URL) => {
-    const session = auth.session(request)
+    const session = await auth.session(request)
     if (!session) { send(response, 401, { error: 'Sign in to use field shifts.' }); return }
     if (url.pathname === '/api/shift/engineers' && request.method === 'GET') {
       if (session.person.role !== 'control') { send(response, 403, { error: 'Only control can view the dispatch roster.' }); return }
-      const state = store.read()
+      const state = await store.read()
       const key = url.searchParams.get('case')
       const entry = state.entries.find((item) => caseKey(item.incident) === key)
       if (entry?.stage !== 'confirmed') { send(response, 409, { error: 'Confirm the incident to view eligible engineers.' }); return }
@@ -64,14 +64,19 @@ export function shiftHandler(store: WorkspaceStore, auth: SessionAuth, origin?: 
     if (url.pathname !== '/api/shift') { send(response, 404, { error: 'Unknown shift request.' }); return }
     if (session.person.role === 'control') { send(response, 403, { error: 'An enrolled field device is required.' }); return }
     if (request.method === 'GET') {
-      send(response, 200, deviceShift(store.read(), session.digest, Date.now()))
+      send(response, 200, deviceShift(await store.read(), session.digest, Date.now()))
       return
     }
     if (request.method !== 'POST') { send(response, 405, { error: 'Expected GET or POST.' }); return }
     const input = await requestBody(request, 1024, origin) as { status?: unknown } | null
     const status = input?.status
     if (!isShiftStatus(status)) { send(response, 400, { error: 'Choose a valid shift status.' }); return }
-    const shift = store.update((state) => changeShift(state, session, status, Date.now()))
+    const shift = await store.update((state) => {
+      const now = Date.now()
+      if (!state.sessions.some((item) => item.digest === session.digest && item.expires > now)) return undefined
+      return changeShift(state, session, status, now)
+    })
+    if (shift === undefined) { send(response, 401, { error: 'This field session has ended.' }); return }
     send(response, shift ? 200 : 409, shift ?? { error: 'Clock in before setting your status to Busy.' })
   }
 }

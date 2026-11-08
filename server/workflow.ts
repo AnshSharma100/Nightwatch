@@ -84,20 +84,20 @@ export function applyChange(state: State, person: Person, update: WorkflowUpdate
 
 export function workflowHandler(store: WorkspaceStore, auth: SessionAuth, push: PushService, recordings: RecordingRegistry, publicOrigin?: string) {
   return async (request: IncomingMessage, response: ServerResponse, pathname: string) => {
-    const session = auth.session(request)
+    const session = await auth.session(request)
     if (!session) { send(response, 401, { error: 'Sign in to view or change assignments.' }); return }
     const { person } = session
     if (pathname === '/api/workflow/invite' && request.method === 'POST') {
       if (person.role !== 'control') { send(response, 403, { error: 'Only the control room can enroll field personnel.' }); return }
       const input = await requestBody(request, 8192, publicOrigin) as { key?: string; role?: unknown } | null
-      const entry = store.read().entries.find((item) => caseKey(item.incident) === input?.key)
+      const entry = (await store.read()).entries.find((item) => caseKey(item.incident) === input?.key)
       if (!entry || (input?.role !== 'foreman' && input?.role !== 'lease')) { send(response, 400, { error: 'Select a reviewed incident and a field role.' }); return }
-      send(response, 200, auth.invite(entry.incident, input.role))
+      send(response, 200, await auth.invite(entry.incident, input.role))
       return
     }
     const detail = /^\/api\/workflow\/assignments\/([0-9a-f-]{36})$/.exec(pathname)
     if (request.method === 'GET' && (pathname === '/api/workflow' || detail)) {
-      const state = store.read()
+      const state = await store.read()
       const entries = state.entries.filter((item) => canRead(person, item))
       if (detail) {
         const entry = entries.find((item) => item.assignment?.id === detail[1])
@@ -127,7 +127,13 @@ export function workflowHandler(store: WorkspaceStore, auth: SessionAuth, push: 
     } else {
       delete input.response
     }
-    const result = store.update((state) => applyChange(state, person, input, Date.now()))
+    const result = await store.update((state) => {
+      const now = Date.now()
+      if (!state.sessions.some((item) => item.digest === session.digest && item.expires > now)) {
+        return { status: 401, error: 'This session has ended.' }
+      }
+      return applyChange(state, person, input, now)
+    })
     send(response, result.status, result.entry ?? { error: result.error })
     if (result.deliveryId) push.schedule(result.deliveryId)
   }

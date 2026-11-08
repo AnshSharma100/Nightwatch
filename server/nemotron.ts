@@ -69,7 +69,7 @@ export function prepareInvestigation(recording: NonNullable<ReturnType<Recording
 export function nemotronHandler(config: Configuration, auth: SessionAuth, recordings: RecordingRegistry) {
   const busy = new Set<string>()
   return async (request: IncomingMessage, response: ServerResponse, path: string) => {
-    const session = auth.session(request)
+    const session = await auth.session(request)
     if (path === '/api/nemotron' && request.method === 'GET') {
       send(response, 200, { configured: Boolean(config.apiKey), authorized: session?.person.role === 'control', model: config.model || defaultModel })
       return

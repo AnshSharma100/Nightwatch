@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "data": "node scripts/prepare-data.mjs",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
@@ -13,12 +13,15 @@
     "test:browser": "playwright test",
     "validate:plans": "node --experimental-strip-types scripts/validate-plans.ts",
     "setup:field": "node scripts/setup-field.mjs",
-    "test:nvidia": "node --experimental-strip-types scripts/test-nvidia.ts"
+    "test:nvidia": "node --experimental-strip-types scripts/test-nvidia.ts",
+    "api": "node --env-file-if-exists=.env --env-file-if-exists=.env.local server/main.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.0",
     "@react-three/fiber": "^9.5.0",
     "lucide-react": "^0.577.0",
+    "pg": "8.23.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "three": "^0.183.0",
@@ -27,6 +30,7 @@
   "devDependencies": {
     "@playwright/test": "^1.65.0",
     "@types/node": "^26.6.6",
+    "@types/pg": "8.23.1",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@types/three": "^0.183.0",

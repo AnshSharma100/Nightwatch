@@ -9,6 +9,13 @@ import type { Dataset } from '../packages/domain/model.ts'
 import type { DatasetUpload } from '../packages/contracts/operations.ts'
 
 export interface Recording { data: Dataset; incidents: Incident[] }
+export interface RecordingMetadata {
+  id: string; owner: string; network: string; name: string; start: number; end: number; file: string; checksum: string
+}
+export interface RecordingCatalog {
+  record(item: RecordingMetadata): Promise<void>
+  checksum(id: string, owner: string): Promise<string | undefined>
+}
 const practicePattern = /^[\w-]{1,100}$/
 const importPattern = /^[0-9a-f-]{36}$/
 const cookieName = 'nw_recordings'
@@ -40,7 +47,7 @@ function privateRecording(bundle: DatasetUpload) {
   return recording
 }
 
-export function operationalRecordings(root: string, archive: string, secure: boolean) {
+export function operationalRecordings(root: string, archive: string, secureHost?: string, catalog?: RecordingCatalog) {
   interface Stored { owner: string; bundle: DatasetUpload }
   interface Cached { owner?: string; recording: Recording }
   const cache = new Map<string, Cached>()
@@ -59,7 +66,7 @@ export function operationalRecordings(root: string, archive: string, secure: boo
     return item.recording
   }
 
-  function find(id: string, request: IncomingMessage) {
+  async function find(id: string, request: IncomingMessage) {
     if (id.startsWith('practice-')) {
       const name = id.slice('practice-'.length)
       if (!practicePattern.test(name) || !names().includes(name)) return undefined
@@ -71,28 +78,42 @@ export function operationalRecordings(root: string, archive: string, secure: boo
     const owner = digest(token)
     const cached = cache.get(id)
     if (cached) return cached.owner === owner ? remember(id, cached) : undefined
+    const checksum = await catalog?.checksum(id, owner)
+    if (catalog && !checksum) return undefined
     const path = join(archive, id + '.json')
     if (!existsSync(path)) return undefined
-    const stored = JSON.parse(readFileSync(path, 'utf8')) as Stored
+    const saved = readFileSync(path, 'utf8')
+    if (checksum && digest(saved) !== checksum) throw new Error('The saved recording failed its checksum verification.')
+    const stored = JSON.parse(saved) as Stored
     if (stored.owner !== owner) return undefined
     return remember(id, { owner, recording: privateRecording(stored.bundle) })
   }
 
-  function upload(bundle: DatasetUpload, request: IncomingMessage, response: ServerResponse) {
+  async function upload(bundle: DatasetUpload, request: IncomingMessage, response: ServerResponse) {
     const recording = privateRecording(bundle)
     const existing = browserToken(request)
     const token = existing ?? randomBytes(24).toString('base64url')
     const owner = digest(token)
     const id = randomUUID()
     mkdirSync(archive, { recursive: true, mode: 0o700 })
-    const target = join(archive, id + '.json')
+    const file = id + '.json'
+    const target = join(archive, file)
     const temp = target + '.tmp'
+    const contents = JSON.stringify({ owner, bundle } satisfies Stored)
     try {
-      writeFileSync(temp, JSON.stringify({ owner, bundle } satisfies Stored), { flag: 'wx', mode: 0o600 })
+      writeFileSync(temp, contents, { flag: 'wx', mode: 0o600 })
       renameSync(temp, target)
+      const { data } = recording
+      if (catalog) await catalog.record({
+        id, owner, network: data.networkKey, name: data.name, start: data.start, end: data.now, file, checksum: digest(contents),
+      })
+    } catch (error) {
+      rmSync(target, { force: true })
+      throw error
     } finally {
       rmSync(temp, { force: true })
     }
+    const secure = secureHost && request.headers.host === secureHost
     if (!existing) response.setHeader('Set-Cookie', cookieName + '=' + token + '; Path=/api; HttpOnly; SameSite=Strict; Max-Age=604800' + (secure ? '; Secure' : ''))
     remember(id, { owner, recording })
     return { id, recording }

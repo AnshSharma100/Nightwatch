@@ -39,7 +39,7 @@ export function workspaceStore(path: string) {
   function read(): State {
     const parsed = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : []
     if (Array.isArray(parsed)) return { entries: parsed.map(migrate), sessions: [], invites: [], subscriptions: [], deliveries: [], shifts: [] }
-    return { shifts: [], ...parsed } as State
+    return { entries: [], sessions: [], invites: [], subscriptions: [], deliveries: [], shifts: [], ...parsed } as State
   }
   function update<T>(apply: (state: State) => T): T {
     const state = read()
@@ -62,7 +62,13 @@ export function workspaceStore(path: string) {
     }
     return result
   }
-  return { read, update }
+  return { read, update, ready: () => { read() }, close: () => {} }
 }
 
-export type WorkspaceStore = ReturnType<typeof workspaceStore>
+type Awaitable<T> = T | Promise<T>
+export interface WorkspaceStore {
+  read(): Awaitable<State>
+  update<T>(apply: (state: State) => T): Awaitable<T>
+  ready(): Awaitable<void>
+  close(): Awaitable<void>
+}

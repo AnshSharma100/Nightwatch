@@ -23,7 +23,7 @@ test('recording API isolates imported evidence and computes both plans from the 
   try {
     const auth = sessionAuth(workspaceStore(join(path, 'workflow.json')), 'control-code')
     const aliases = recordingRegistry()
-    const createHandler = () => operationsHandler(operationalRecordings(path, path, false), aliases, auth)
+    const createHandler = (requireControl = false) => operationsHandler(operationalRecordings(path, path), aliases, auth, undefined, requireControl)
     let handler = createHandler()
     async function request<T>(route: string, body?: unknown, cookie?: string) {
       const url = new URL(route, 'http://localhost')
@@ -45,7 +45,11 @@ test('recording API isolates imported evidence and computes both plans from the 
 
     const samples = fixture((id, metric, step, value) =>
       id === 'A/pump' && metric === 'status' && step >= 2 ? 2 : value)
-    const imported = await request<OpenRecording>('/api/datasets/import', { network: samples.network, ops: samples.ops, telemetry: samples.csv })
+    const bundle = { network: samples.network, ops: samples.ops, telemetry: samples.csv }
+    handler = createHandler(true)
+    assert.equal((await request('/api/datasets/import', bundle)).status, 403)
+    handler = createHandler()
+    const imported = await request<OpenRecording>('/api/datasets/import', bundle)
     assert.equal(imported.status, 201)
     const { id, latest } = imported.data
     const source = parseDataset('original', samples.network, samples.ops, samples.csv)
