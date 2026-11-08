@@ -3,11 +3,13 @@ import { read, yardId } from '../../packages/domain/model.ts'
 import type { Dataset } from '../../packages/domain/model.ts'
 import type { Alert } from '../../packages/domain/incidents.ts'
 import { number } from './format.ts'
+import type { ProjectedNetwork } from './playback.ts'
 
 export interface Scope { systemId?: string; facilityId?: string }
 export interface MapProps {
   data: Dataset; at: number; scope: Scope; selected: string | null; alerts: Alert[]
   onSelect: (id: string) => void; onFocus: (id: string) => void
+  projection?: ProjectedNetwork
 }
 
 export function NetworkMap({ data, at, scope, selected, alerts, onSelect, onFocus }: MapProps) {

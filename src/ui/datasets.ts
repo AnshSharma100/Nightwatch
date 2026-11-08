@@ -8,8 +8,12 @@ const endpoint = '/api/datasets'
 const recordingIds = new WeakMap<Dataset, string>()
 const registered = new WeakMap<Dataset, string>()
 
+export function recordingId(data: Dataset) {
+  return recordingIds.get(data)
+}
+
 function path(data: Dataset, suffix: string) {
-  const id = recordingIds.get(data)
+  const id = recordingId(data)
   if (!id) throw new Error('Reload this recording before continuing.')
   return endpoint + '/' + encodeURIComponent(id) + suffix
 }

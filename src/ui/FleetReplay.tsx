@@ -1,26 +1,15 @@
-import { useMemo } from 'react'
+import { useId, useMemo } from 'react'
 import { Truck } from 'lucide-react'
 import type { Outcome, Scenario, ScheduledJob } from '../../packages/domain/simulate.ts'
-import { frameAt } from './playback.ts'
+import { frameAt, truckFraction } from './playback.ts'
 import { duration, number } from './format.ts'
 
 type Point = [number, number]
 
-function position(job: ScheduledJob, minute: number) {
-  const index = job.arrivals.findIndex((arrival) => minute < arrival)
-  const first = job.arrivals[0]
-  if (minute < first) return (minute - job.dispatchMin) / (first - job.dispatchMin)
-  if (index !== -1) {
-    const previous = job.arrivals[index - 1]
-    return Math.abs(1 - 2 * (minute - previous) / (job.arrivals[index] - previous))
-  }
-  const last = job.arrivals.at(-1)!
-  return 1 - (minute - last) / (job.freeMin - last)
-}
-
 export function FleetReplay({ scenario, outcome, minute, title, color }: {
   scenario: Scenario; outcome: Outcome; minute: number; title: string; color: string
 }) {
+  const grid = useId()
   const { yard, sites } = useMemo(() => {
     const coords = [scenario.system.truckYard, ...scenario.failures.map((item) => item.facility.location)]
     const latitudes = coords.map(([lat]) => lat)
@@ -53,10 +42,10 @@ export function FleetReplay({ scenario, outcome, minute, title, color }: {
   return <article className="fleet-replay" style={{ '--branch-color': color } as React.CSSProperties}>
     <header><Truck size={15} /><strong>{title}</strong><span>{busy.length}/{scenario.system.fleetSize} trucks occupied</span></header>
     <svg viewBox="0 0 460 139" role="img" aria-label={title + ' schematic truck and tank playback'}>
-      <defs><pattern id={'grid-' + title} width="17" height="17" patternUnits="userSpaceOnUse"><path d="M 17 0 L 0 0 0 17" fill="none" stroke="#29424a" strokeWidth=".5" /></pattern></defs>
-      <rect width="460" height="139" fill={'url(#grid-' + title + ')'} />
-      {[...sites].map(([id, [x, y]]) => <path key={id} d={'M ' + yard[0] + ' ' + yard[1] + ' L ' + x + ' ' + y} stroke="#526c70" strokeDasharray="3 4" />)}
-      <g transform={'translate(' + yard.join(' ') + ')'}><rect x="-13" y="-10" width="26" height="20" rx="4" fill="#273f46" stroke="#668687" /><text y="3" textAnchor="middle">YARD</text></g>
+      <defs><pattern id={grid} width="17" height="17" patternUnits="userSpaceOnUse"><path d="M 17 0 L 0 0 0 17" fill="none" stroke="var(--line)" strokeWidth=".5" /></pattern></defs>
+      <rect width="460" height="139" fill={'url(#' + grid + ')'} />
+      {[...sites].map(([id, [x, y]]) => <path key={id} d={'M ' + yard[0] + ' ' + yard[1] + ' L ' + x + ' ' + y} stroke="var(--quiet)" strokeDasharray="3 4" />)}
+      <g transform={'translate(' + yard.join(' ') + ')'}><rect x="-13" y="-10" width="26" height="20" rx="4" fill="var(--tint)" stroke="var(--teal)" /><text y="3" textAnchor="middle">YARD</text></g>
       {scenario.failures.map(({ facility }, index) => {
         const [x, y] = sites.get(facility.id)!
         const frame = frameAt(outcome.facilities[index].frames, minute)!
@@ -64,17 +53,17 @@ export function FleetReplay({ scenario, outcome, minute, title, color }: {
         const height = Math.min(20, pct * .2)
         return <g key={facility.id} transform={'translate(' + x + ' ' + y + ')'}>
           <title>{facility.id} · {number(pct)}% tank fill</title>
-          <rect x="-11" y="-12" width="22" height="24" rx="4" fill="#183039" stroke={frame.automatic ? 'var(--coral)' : '#729290'} />
+          <rect x="-11" y="-12" width="22" height="24" rx="4" fill="var(--surface)" stroke={frame.automatic ? 'var(--coral)' : 'var(--quiet)'} />
           <rect x="-9" y={10 - height} width="18" height={height} rx="1.5" fill={frame.automatic ? 'var(--coral)' : color} />
           <text y="23" textAnchor="middle">{facility.id.split('_').at(-1)} · {number(pct, 0)}%</text>
         </g>
       })}
       {busy.map((job) => {
         const [x, y] = sites.get(job.facilityId)!
-        const progress = position(job, minute)
+        const progress = truckFraction(job, minute)
         return <g key={job.truck} transform={'translate(' + (yard[0] + (x - yard[0]) * progress) + ' ' + (yard[1] + (y - yard[1]) * progress - 12) + ')'}>
           <title>Truck {job.truck} · {job.facilityId} · free +{duration(job.freeMin)}</title>
-          <rect x="-8" y="-5" width="16" height="10" rx="3" fill={color} stroke="#17282b" />
+          <rect x="-8" y="-5" width="16" height="10" rx="3" fill={color} stroke="var(--text)" />
           <text y="2.8" textAnchor="middle" className="truck-number">{job.truck}</text>
         </g>
       })}

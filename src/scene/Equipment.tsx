@@ -152,7 +152,7 @@ export function TruckModel({ at, shade = '#bf9360', rotation = 0 }: { at: Positi
   </group>
 }
 
-export function Yard({ at, slots, selected, onClick }: { at: Position; slots: number; selected: boolean; onClick: Click }) {
+export function Yard({ at, slots, away, selected, onClick }: { at: Position; slots: number; away?: ReadonlySet<number>; selected: boolean; onClick: Click }) {
   const visible = Math.min(slots, 12)
   const cols = Math.max(2, Math.min(4, visible))
   const rows = Math.max(1, Math.ceil(visible / cols))
@@ -164,7 +164,7 @@ export function Yard({ at, slots, selected, onClick }: { at: Position; slots: nu
     {Array.from({ length: visible }, (_, i) => {
       const x = (i % cols - (cols - 1) / 2) * 1.87
       const z = Math.floor(i / cols) * 1.04 - rows * .5 + .7
-      return <group key={i}><Block at={[x, .125, z + .43]} size={[1.7, .015, .038]} color="#b9ad88" /><TruckModel at={[x, .11, z]} shade={i % 2 ? '#b39d6d' : '#c2895a'} /></group>
+      return <group key={i}><Block at={[x, .125, z + .43]} size={[1.7, .015, .038]} color="#b9ad88" />{!away?.has(i + 1) && <TruckModel at={[x, .11, z]} shade={i % 2 ? '#b39d6d' : '#c2895a'} />}</group>
     })}
     {selected && <Marker radius={2.25} color={palette.light} />}
   </group>

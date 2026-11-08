@@ -7,7 +7,8 @@ import type { ComponentRef } from 'react'
 import { read, yardId } from '../../packages/domain/model.ts'
 import type { Dataset } from '../../packages/domain/model.ts'
 import type { MapProps } from '../ui/NetworkMap.tsx'
-import { Block, Cylinder, Disposal, Marker, palette, Pipe, Pump, Tank, WellHead, Yard } from './Equipment.tsx'
+import type { ProjectedSite } from '../ui/playback.ts'
+import { Block, Cylinder, Disposal, Marker, palette, Pipe, Pump, Tank, TruckModel, WellHead, Yard } from './Equipment.tsx'
 import { add, layoutWorld, pipeStart, pumpPosition, tankPosition, wellPosition } from './layout.ts'
 import './labels.css'
 import type { FacilityLayout, Position, RegionLayout, WorldLayout } from './layout.ts'
@@ -121,13 +122,13 @@ function Terrain({ region }: { region: RegionLayout }) {
   </group>
 }
 
-function FacilityPad({ layout, data, at, alertColor, selected, detailed, reduced, onSelect }: {
+function FacilityPad({ layout, data, at, alertColor, selected, detailed, reduced, onSelect, projected }: {
   layout: FacilityLayout; data: Dataset; at: number; alertColor: string | undefined; selected: string | null
-  detailed: boolean; reduced: boolean; onSelect: (id: string) => void
+  detailed: boolean; reduced: boolean; onSelect: (id: string) => void; projected?: ProjectedSite
 }) {
   const { facility, pad } = layout
-  const fill = read(data, facility.tank.id, 'level_pct', at)
-  const state = read(data, facility.pump.id, 'status', at)
+  const fill = projected?.fill ?? read(data, facility.tank.id, 'level_pct', at)
+  const state = projected ? projected.repaired ? undefined : 2 : read(data, facility.pump.id, 'status', at)
   const flowing = state === 1 && (read(data, facility.pump.id, 'flow_bpd', at) ?? 0) > 0
   const scale = Math.min(1, 3.2 / Math.max(3.2, Math.ceil(facility.wells.length / 4) * 1.17))
   const wellPipes = useMemo(() => facility.wells.map((well, index) => {
@@ -153,7 +154,7 @@ function FacilityPad({ layout, data, at, alertColor, selected, detailed, reduced
     <Pipe points={internalTransfer} color={flowing ? palette.water : palette.dryPipe} active={flowing} reduced={reduced || !detailed} small />
     <group scale={scale}>
       {wellPipes.map(({ well, position, points }) => {
-        const status = read(data, well.id, 'status', at)
+        const status = projected ? Number(!projected.stoppedWells.has(well.id)) : read(data, well.id, 'status', at)
         return <group key={well.id}>
           <WellHead at={position} status={status} selected={selected === well.id} onClick={clickable(well.id, onSelect)} reduced={reduced || !detailed} />
           <Pipe points={points} color={status === 1 ? '#73968a' : '#7d8274'} active={status === 1} reduced={reduced || !detailed} small />
@@ -164,11 +165,12 @@ function FacilityPad({ layout, data, at, alertColor, selected, detailed, reduced
 }
 const internalTransfer: Position[] = [[-.05, .5, -.4], [.48, .5, -.4], [.94, .5, -.5], [1.38, .5, -.5]]
 
-function Region({ region, data, at, scope, selected, alerts, onSelect, reduced }: SceneProps & { region: RegionLayout; reduced: boolean }) {
+function Region({ region, data, at, scope, selected, alerts, onSelect, reduced, projection }: SceneProps & { region: RegionLayout; reduced: boolean }) {
   const { system, center, disposal, yard, facilities } = region
   const inSystem = scope.systemId === system.id
   const yardAsset = yardId(system.id)
   const regionAlerts = alerts.filter((alert) => alert.systemId === system.id && alert.verified)
+  const future = projection?.systemId === system.id ? projection : undefined
   const routes = useMemo(() => facilities.map(({ facility, pad }, i) => {
     const start = add(pad, pipeStart)
     const end = add(disposal, [1.12, .31, .71 + (i - (facilities.length - 1) / 2) * .21])
@@ -182,7 +184,7 @@ function Region({ region, data, at, scope, selected, alerts, onSelect, reduced }
     <Terrain region={region} />
     {routes.map(({ facility, pad, points }) => {
       const hasLeak = regionAlerts.some((alert) => alert.assetId === facility.pipeline.id)
-      const flow = read(data, facility.pipeline.id, 'receive_flow_bpd', at) ?? 0
+      const flow = future?.sites.has(facility.id) ? 0 : read(data, facility.pipeline.id, 'receive_flow_bpd', at) ?? 0
       const isSelected = selected === facility.pipeline.id
       return <group key={facility.id}>
         <Road a={yard} b={pad} />
@@ -191,13 +193,25 @@ function Region({ region, data, at, scope, selected, alerts, onSelect, reduced }
     })}
     {facilities.map((layout) => {
       const warnings = regionAlerts.filter((alert) => alert.facilityId === layout.facility.id)
+      const projected = future?.sites.get(layout.facility.id)
       const alertColor = warnings.some((alert) => alert.category === 'pump_failure') ? palette.fault :
         warnings.some((alert) => alert.category === 'pump_degradation') ? palette.caution : undefined
       return <FacilityPad key={layout.facility.id} layout={layout} data={data} at={at} alertColor={alertColor} selected={selected}
-        detailed={inSystem} reduced={reduced} onSelect={onSelect} />
+        detailed={inSystem} reduced={reduced} onSelect={onSelect} projected={projected} />
     })}
     <Disposal at={disposal} selected={selected === system.disposal.id} onClick={clickable(system.disposal.id, onSelect)} />
-    <Yard at={yard} slots={system.fleetSize} selected={selected === yardAsset} onClick={clickable(yardAsset, onSelect)} />
+    <Yard at={yard} slots={system.fleetSize} away={future ? new Set(future.trucks.map((truck) => truck.slot)) : undefined}
+      selected={selected === yardAsset} onClick={clickable(yardAsset, onSelect)} />
+    {future?.trucks.map((truck) => {
+      const destination = facilities.find((site) => site.facility.id === truck.facilityId)
+      if (!destination) return null
+      const dx = destination.pad[0] - yard[0]
+      const dz = destination.pad[2] - yard[2]
+      const length = Math.hypot(dx, dz) || 1
+      const offset = truck.slot % 2 ? -.43 : .43
+      return <TruckModel key={truck.slot} shade="#d79c55" rotation={-Math.atan2(dz, dx) + (truck.returning ? Math.PI : 0)}
+        at={[yard[0] + dx * truck.fraction - dz / length * offset, .1, yard[2] + dz * truck.fraction + dx / length * offset]} />
+    })}
   </group>
 }
 
@@ -234,7 +248,7 @@ interface SceneLabel {
 }
 
 function mapLabels(world: WorldLayout, props: SceneProps): SceneLabel[] {
-  const { data, at, scope, alerts, onSelect, onFocus } = props
+  const { data, at, scope, alerts, onSelect, onFocus, projection } = props
   return world.regions.flatMap((region): SceneLabel[] => {
     const { system, center, size, localCenter } = region
     const incidents = alerts.filter((alert) => alert.verified && alert.systemId === system.id)
@@ -251,11 +265,12 @@ function mapLabels(world: WorldLayout, props: SceneProps): SceneLabel[] {
     const labels: SceneLabel[] = region.facilities
       .filter(({ facility }) => !scope.facilityId || scope.facilityId === facility.id)
       .map(({ facility, pad }) => {
-        const fill = read(data, facility.tank.id, 'level_pct', at)
-        const failed = read(data, facility.pump.id, 'status', at) === 2
-        const flagged = incidents.some((alert) => alert.facilityId === facility.id)
+        const projected = projection?.sites.get(facility.id)
+        const fill = projected?.fill ?? read(data, facility.tank.id, 'level_pct', at)
+        const failed = projected ? !projected.repaired : read(data, facility.pump.id, 'status', at) === 2
+        const flagged = projected?.repaired ? false : incidents.some((alert) => alert.facilityId === facility.id)
         return {
-          id: facility.id, title: siteName(facility.id, system.id), detail: fill === undefined ? '—' : Math.round(fill) + '%', kind: 'facility',
+          id: facility.id, title: siteName(facility.id, system.id), detail: fill === undefined ? '—' : Math.round(fill) + '%' + (projected?.automatic ? ' · Shut in' : ''), kind: 'facility',
           state: failed ? 'failed' : flagged ? 'flagged' : undefined, position: add(add(center, pad), [0, 2.53, .15]),
           onClick: () => onFocus(facility.id),
         }
@@ -303,7 +318,8 @@ function World({ world, labels, nodes, ...props }: SceneProps & { world: WorldLa
       castShadow={Boolean(props.scope.systemId)} shadow-mapSize={[1024, 1024]} shadow-normalBias={.055}
       shadow-camera-left={-shadowWidth} shadow-camera-right={shadowWidth} shadow-camera-top={shadowWidth} shadow-camera-bottom={-shadowWidth} />
     <directionalLight position={[35, 12, -30]} intensity={.62} color="#a1cecf" />
-    {world.regions.map((region) => <Region key={region.system.id} {...props} region={region} reduced={reduced} />)}
+    {world.regions.filter((region) => !props.projection || region.system.id === props.projection.systemId)
+      .map((region) => <Region key={region.system.id} {...props} region={region} reduced={reduced} />)}
     <CameraRig target={target} span={span} bounds={bounds} focusRequest={props.focusRequest} reduced={reduced} />
     <ProjectLabels labels={labels} nodes={nodes} />
   </>

@@ -13,7 +13,7 @@ import { caseFromAlert, caseKey } from '../../packages/domain/workflow.ts'
 import { OperationsStrip } from './OperationsStrip.tsx'
 import { SpatialView } from './SpatialView.tsx'
 import type { Scope } from './NetworkMap.tsx'
-import { comparePlans, loadPractice, loadUpload, practiceNames, recordedSnapshot, registerInvestigationDataset } from './datasets.ts'
+import { comparePlans, loadPractice, loadRecording, loadUpload, practiceNames, recordedSnapshot, recordingId, registerInvestigationDataset } from './datasets.ts'
 import type { LoadedRecording } from './datasets.ts'
 import { practiceLabel, stamp } from './format.ts'
 import { BrandMark, ThemeToggle, useTheme } from './Theme.tsx'
@@ -22,6 +22,9 @@ import './workspace.css'
 type Demo = { stage: 'intro' | 'first-replay' | 'first-failure' | 'cluster-replay' | 'cluster'; first: Incident; last: Incident }
 
 const noAlerts: Alert[] = []
+const labPath = '/decision-lab'
+const currentLabRoute = () => location.pathname === labPath ? location.search : null
+type LabView = { route: string; comparison: PlanComparison; demo: boolean; alerts: Alert[]; data: Dataset }
 
 function demoSequence(incidents: Incident[]) {
   const failures = incidents.filter((incident) => incident.category === 'pump_failure')
@@ -56,7 +59,10 @@ export function App() {
   const [playing, setPlaying] = useState(false)
   const [status, setStatus] = useState('Loading practice telemetry…')
   const [error, setError] = useState('')
-  const [lab, setLab] = useState<{ comparison: PlanComparison; demo: boolean; alerts: Alert[] } | null>(null)
+  const [lab, setLab] = useState<LabView | null>(null)
+  const [labRoute, setLabRoute] = useState(currentLabRoute)
+  const [labError, setLabError] = useState('')
+  const hadLab = useRef(labRoute !== null)
   const [snapshot, setSnapshot] = useState<RecordedSnapshot | null>(null)
   const [calculation, setCalculation] = useState<{ data: Dataset; at: number; systemId: string; comparison: PlanComparison } | null>(null)
   const labRequest = useRef<AbortController | null>(null)
@@ -148,7 +154,7 @@ export function App() {
         if (request.current !== id) return
         setNames(list)
         const name = list.includes('full_week') ? 'full_week' : list[0]
-        if (name) {
+        if (name && currentLabRoute() === null) {
           const dataset = await loadPractice(name)
           if (request.current === id) adopt(dataset)
         }
@@ -160,6 +166,57 @@ export function App() {
     }
     void boot()
   }, [])
+
+  useEffect(() => {
+    const navigate = () => setLabRoute(currentLabRoute())
+    window.addEventListener('popstate', navigate)
+    return () => window.removeEventListener('popstate', navigate)
+  }, [])
+
+  useEffect(() => {
+    if (labRoute === null) {
+      if (hadLab.current) window.requestAnimationFrame(() => {
+        const opener = document.querySelector<HTMLButtonElement>('#asset-inspector .inspector-response .primary-btn')
+        if (opener && !opener.disabled) opener.focus()
+        else document.getElementById('operations-heading')?.focus()
+      })
+      hadLab.current = false
+      return
+    }
+    hadLab.current = true
+    setLabError('')
+    if (lab?.route === labRoute) return
+    const controller = new AbortController()
+    const parameters = new URLSearchParams(labRoute)
+    const id = parameters.get('recording')
+    const systemId = parameters.get('system')
+    const at = Number(parameters.get('at'))
+    const demo = parameters.get('demo') === '1'
+    if (!id || !systemId || !parameters.has('at') || !Number.isSafeInteger(at)) {
+      setLabError('Choose a recorded pump failure in Operations to start a comparison.')
+      return
+    }
+    void (async () => {
+      try {
+        const loaded = await loadRecording(id)
+        if (controller.signal.aborted) return
+        const [comparison, frame] = await Promise.all([
+          comparePlans(loaded.data, { at, systemId, demo }, controller.signal),
+          recordedSnapshot(loaded.data, at, controller.signal),
+        ])
+        if (controller.signal.aborted) return
+        adopt(loaded)
+        setIndex(loaded.data.times.indexOf(at))
+        setSnapshot(frame)
+        setSelected(comparison.scenario.failures[0]?.facility.pump.id ?? systemId)
+        setInspectorOpen(true)
+        setLab({ route: labRoute, comparison, demo, alerts: frame.alerts, data: loaded.data })
+      } catch (error) {
+        if (!controller.signal.aborted) setLabError((error as Error).message)
+      }
+    })()
+    return () => controller.abort()
+  }, [labRoute, lab?.route])
 
   useEffect(() => {
     if (!playing || !data) return
@@ -203,10 +260,29 @@ export function App() {
       const comparison = !demoPlan && planning?.scenario.system.id === systemId ? planning :
         await comparePlans(data, { at, systemId, demo: demoPlan }, controller.signal)
       if (controller.signal.aborted) return
-      setLab({ comparison, demo: demoPlan, alerts })
+      const id = recordingId(data)
+      if (!id) throw new Error('Reload the recording before opening Decision Lab.')
+      const query = new URLSearchParams({ recording: id, system: systemId, at: String(at) })
+      if (demoPlan) query.set('demo', '1')
+      const route = '?' + query.toString()
+      window.history.pushState({ nightwatchLab: true }, '', labPath + route)
+      setLab({ route, comparison, demo: demoPlan, alerts, data })
+      setLabRoute(route)
       if (demoPlan) setDemo(null)
     } catch (error) {
       if (!controller.signal.aborted) setError((error as Error).message)
+    }
+  }
+
+  function closeLab() {
+    if (window.history.state?.nightwatchLab) window.history.back()
+    else {
+      window.history.replaceState(null, '', '/')
+      setLabRoute(null)
+      if (!data && names[0]) {
+        const name = names.includes('full_week') ? 'full_week' : names[0]
+        void load(() => loadPractice(name), 'practice dataset')
+      }
     }
   }
 
@@ -269,9 +345,17 @@ export function App() {
     ...(facility ? [{ id: facility.id, label: facility.id }] : []),
     ...(leaf ? [{ id: selected, label: leaf }] : []),
   ]
+  if (labRoute !== null) {
+    if (lab?.route === labRoute) return <DecisionLab key={labRoute} comparison={lab.comparison} demo={lab.demo} data={lab.data}
+      alerts={lab.alerts} theme={theme} onClose={closeLab} />
+    return <main className="lab-route-state"><section className="panel welcome"><h1>Decision Lab</h1>
+      {labError ? <p role="alert">{labError}</p> : <p role="status">Loading the recorded decision point…</p>}
+      <button className="soft-btn" onClick={closeLab}>Back to Operations</button></section></main>
+  }
+
   return <div className="operator-shell">
     <header className="operator-top">
-      <div className="operator-brand"><BrandMark /><div><h1>NIGHTWATCH</h1><span>FIELD ATLAS</span></div></div>
+      <div className="operator-brand"><BrandMark /><div><h1 id="operations-heading" tabIndex={-1}>NIGHTWATCH</h1><span>FIELD ATLAS</span></div></div>
       <div className="operator-recording">
         <label className="operator-dataset"><Database size={15} /><select aria-label="Dataset" value={data?.name ?? ''} onChange={(event) => void load(() => loadPractice(event.target.value), 'practice dataset')}>
           {!data && <option value="" disabled>Choose a dataset</option>}
@@ -359,6 +443,5 @@ export function App() {
         </section>
       </> : <section className="panel welcome"><div className="empty-glyph"><Database size={26} /></div><h2>Load a network</h2><p>Select the three EOG files together to build the network and analyze its recorded telemetry.</p><button className="primary-btn" onClick={() => input.current?.click()}><Upload size={15} /> Import dataset</button></section>}
     </main>
-    {lab && data && <DecisionLab comparison={lab.comparison} demo={lab.demo} data={data} alerts={lab.alerts} onClose={() => setLab(null)} />}
   </div>
 }
