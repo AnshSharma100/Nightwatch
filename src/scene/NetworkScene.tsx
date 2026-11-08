@@ -1,15 +1,15 @@
-import { Html, OrbitControls } from '@react-three/drei'
+import { OrbitControls } from '@react-three/drei'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import type { ThreeEvent } from '@react-three/fiber'
 import { useEffect, useMemo, useRef } from 'react'
-import { Vector3 } from 'three'
-import type { OrbitControls as Controls } from 'three-stdlib'
+import { Object3D, Vector3 } from 'three'
+import type { ComponentRef } from 'react'
 import { read, yardId } from '../engine/model.ts'
 import type { Dataset } from '../engine/model.ts'
 import type { MapProps } from '../ui/NetworkMap.tsx'
-import { number } from '../ui/format.ts'
 import { Block, Cylinder, Disposal, Marker, palette, Pipe, Pump, Tank, WellHead, Yard } from './Equipment.tsx'
 import { add, layoutWorld, pipeStart, pumpPosition, tankPosition, wellPosition } from './layout.ts'
+import './labels.css'
 import type { FacilityLayout, Position, RegionLayout, WorldLayout } from './layout.ts'
 
 interface SceneProps extends MapProps {
@@ -17,14 +17,32 @@ interface SceneProps extends MapProps {
   onContextLost: () => void
 }
 
-function CameraRig({ target, span, focusRequest, reduced }: { target: Position; span: number; focusRequest: number; reduced: boolean }) {
-  const controls = useRef<Controls>(null)
+const cameraDirection = new Vector3(.9, .98, 1.16).normalize()
+const cameraRight = new Vector3(cameraDirection.z, 0, -cameraDirection.x).normalize()
+const cameraUp = cameraDirection.clone().cross(cameraRight)
+const halfFov = Math.tan(39 / 2 * Math.PI / 180)
+
+function CameraRig({ target, span, bounds, focusRequest, reduced }: {
+  target: Position; span: number; bounds?: Position[]; focusRequest: number; reduced: boolean
+}) {
+  const controls = useRef<ComponentRef<typeof OrbitControls>>(null)
   const move = useRef(true)
   const initial = useRef(true)
   const { camera, size } = useThree()
   const destination = useMemo(() => new Vector3(...target), [target[0], target[1], target[2]])
-  const fit = span / Math.min(1, size.width / size.height)
-  const end = useMemo(() => destination.clone().add(new Vector3(.9, .98, 1.16).normalize().multiplyScalar(fit)), [destination, fit])
+  const aspect = Math.max(.3, size.width / Math.max(1, size.height))
+  const fit = useMemo(() => {
+    if (!bounds) return span / Math.min(1, aspect)
+    const margin = .83
+    const relative = new Vector3()
+    return Math.max(4, ...bounds.map((point) => {
+      relative.set(...point).sub(destination)
+      const horizontal = Math.abs(relative.dot(cameraRight)) / (halfFov * aspect * margin)
+      const vertical = Math.abs(relative.dot(cameraUp)) / (halfFov * margin)
+      return relative.dot(cameraDirection) + Math.max(horizontal, vertical)
+    }))
+  }, [aspect, bounds, destination, span])
+  const end = useMemo(() => destination.clone().addScaledVector(cameraDirection, fit), [destination, fit])
   useEffect(() => {
     move.current = true
     if (controls.current && (reduced || initial.current)) {
@@ -43,7 +61,7 @@ function CameraRig({ target, span, focusRequest, reduced }: { target: Position; 
     controls.current.update()
     if (camera.position.distanceTo(end) < .025 && controls.current.target.distanceTo(destination) < .025) move.current = false
   })
-  return <OrbitControls ref={controls} makeDefault minDistance={4} maxDistance={Math.max(470, span * 2)} enableDamping dampingFactor={.09} maxPolarAngle={Math.PI * .47}
+  return <OrbitControls ref={controls} makeDefault minDistance={4} maxDistance={Math.max(470, fit * 2)} enableDamping dampingFactor={.09} maxPolarAngle={Math.PI * .47}
     onStart={() => { move.current = false }} />
 }
 
@@ -102,9 +120,9 @@ function Terrain({ region }: { region: RegionLayout }) {
   </group>
 }
 
-function FacilityPad({ layout, data, at, alertColor, selected, showLabel, detailed, reduced, onSelect, onFocus }: {
+function FacilityPad({ layout, data, at, alertColor, selected, detailed, reduced, onSelect }: {
   layout: FacilityLayout; data: Dataset; at: number; alertColor: string | undefined; selected: string | null
-  showLabel: boolean; detailed: boolean; reduced: boolean; onSelect: (id: string) => void; onFocus: (id: string) => void
+  detailed: boolean; reduced: boolean; onSelect: (id: string) => void
 }) {
   const { facility, pad } = layout
   const fill = read(data, facility.tank.id, 'level_pct', at)
@@ -141,22 +159,15 @@ function FacilityPad({ layout, data, at, alertColor, selected, showLabel, detail
         </group>
       })}
     </group>
-    {showLabel && <Html position={[0, 2.53, .15]} center zIndexRange={[9, 2]} className="scene-label-wrapper" style={{ pointerEvents: 'auto' }}>
-      <button className={'scene-label' + (alertColor ? ' flagged' : '') + (state === 2 ? ' failed' : '')} onClick={() => onFocus(facility.id)}>
-        <i /><strong>{siteName(facility.id, facility.systemId)}</strong>{detailed && <span>{fill === undefined ? '—' : number(fill, 0) + '%'}</span>}
-      </button>
-    </Html>}
   </group>
 }
 const internalTransfer: Position[] = [[-.05, .5, -.4], [.48, .5, -.4], [.94, .5, -.5], [1.38, .5, -.5]]
 
-function Region({ region, data, at, scope, selected, alerts, onFocus, onSelect, reduced }: SceneProps & { region: RegionLayout; reduced: boolean }) {
-  const { system, center, localCenter, disposal, yard, facilities, size } = region
+function Region({ region, data, at, scope, selected, alerts, onSelect, reduced }: SceneProps & { region: RegionLayout; reduced: boolean }) {
+  const { system, center, disposal, yard, facilities } = region
   const inSystem = scope.systemId === system.id
-  const focus = scope.facilityId
   const yardAsset = yardId(system.id)
   const regionAlerts = alerts.filter((alert) => alert.systemId === system.id && alert.verified)
-  const alarmCount = regionAlerts.length
   const routes = useMemo(() => facilities.map(({ facility, pad }, i) => {
     const start = add(pad, pipeStart)
     const end = add(disposal, [1.12, .31, .71 + (i - (facilities.length - 1) / 2) * .21])
@@ -182,58 +193,138 @@ function Region({ region, data, at, scope, selected, alerts, onFocus, onSelect, 
       const alertColor = warnings.some((alert) => alert.category === 'pump_failure') ? palette.fault :
         warnings.some((alert) => alert.category === 'pump_degradation') ? palette.caution : undefined
       return <FacilityPad key={layout.facility.id} layout={layout} data={data} at={at} alertColor={alertColor} selected={selected}
-        showLabel={inSystem && (!focus || focus === layout.facility.id)} detailed={inSystem} reduced={reduced} onSelect={onSelect} onFocus={onFocus} />
+        detailed={inSystem} reduced={reduced} onSelect={onSelect} />
     })}
     <Disposal at={disposal} selected={selected === system.disposal.id} onClick={clickable(system.disposal.id, onSelect)} />
     <Yard at={yard} slots={system.fleetSize} selected={selected === yardAsset} onClick={clickable(yardAsset, onSelect)} />
-    {!scope.systemId && <Html position={[localCenter[0] - size[0] * .28, 2.3, localCenter[2] + size[1] * .37]} center zIndexRange={[9, 2]} className="scene-label-wrapper" style={{ pointerEvents: 'auto' }}>
-      <button className={'scene-label region-label' + (alarmCount ? ' flagged' : '')} onClick={() => onFocus(system.id)}><i /><strong>{system.id}</strong><span>{alarmCount ? alarmCount + ' alerts' : system.facilities.length + ' sites'}</span></button>
-    </Html>}
-    {inSystem && !focus && <>
-      <Html position={add(disposal, [0, 2, 0])} center zIndexRange={[8, 2]} className="scene-label-wrapper" style={{ pointerEvents: 'auto' }}>
-        <button className="scene-label minor-label" onClick={() => onSelect(system.disposal.id)}>Disposal</button>
-      </Html>
-      <Html position={add(yard, [0, 1.8, 0])} center zIndexRange={[8, 2]} className="scene-label-wrapper" style={{ pointerEvents: 'auto' }}>
-        <button className="scene-label minor-label" onClick={() => onSelect(yardAsset)}>Yard · {system.fleetSize}</button>
-      </Html>
-    </>}
   </group>
 }
 
-function framing(world: WorldLayout, { scope, selected, data }: SceneProps): { target: Position; span: number } {
+function corners(region: RegionLayout): Position[] {
+  const center = add(region.center, region.localCenter)
+  return [-1, 1].flatMap((x) => [-1, 1].flatMap((z) => [-1, 2.4].map((y) =>
+    add(center, [x * region.size[0] / 2, y, z * region.size[1] / 2]))))
+}
+
+function framing(world: WorldLayout, { scope, selected, data }: SceneProps): { target: Position; span: number; bounds?: Position[] } {
   const region = world.regions.find(({ system }) => system.id === scope.systemId)
   const site = region?.facilities.find(({ facility }) => facility.id === scope.facilityId)
   if (region && site) {
     let offset: Position = [0, .52, .42]
     const kind = selected ? data.assets.get(selected)?.kind : null
     if (kind === 'pump') offset = add(pumpPosition, [0, .4, .37])
+    if (kind === 'pipeline') offset = add(pipeStart, [0, .2, .5])
     if (kind === 'tank') offset = add(tankPosition, [0, .64, .56])
     if (kind === 'well') offset = add(wellPosition(site.facility.wells.findIndex((well) => well.id === selected), site.facility.wells.length), [0, .37, 0])
     return { target: add(add(region.center, site.pad), offset), span: 14 }
   }
-  if (region) return { target: add(region.center, region.localCenter), span: Math.hypot(...region.size) * 1.12 }
-  return { target: world.center, span: Math.hypot(...world.size) * 1.13 }
+  if (region) return { target: add(region.center, region.localCenter), span: Math.hypot(...region.size), bounds: corners(region) }
+  return { target: world.center, span: Math.hypot(...world.size), bounds: world.regions.flatMap(corners) }
 }
 
-function World(props: SceneProps) {
-  const world = useMemo(() => layoutWorld(props.data), [props.data])
+interface SceneLabel {
+  id: string
+  title: string
+  detail?: string
+  kind: 'region' | 'facility' | 'minor'
+  state?: 'flagged' | 'failed'
+  position: Position
+  onClick: () => void
+}
+
+function mapLabels(world: WorldLayout, props: SceneProps): SceneLabel[] {
+  const { data, at, scope, alerts, onSelect, onFocus } = props
+  return world.regions.flatMap((region): SceneLabel[] => {
+    const { system, center, size, localCenter } = region
+    const incidents = alerts.filter((alert) => alert.verified && alert.systemId === system.id)
+    if (!scope.systemId) {
+      return [{
+        id: system.id, title: system.id, kind: 'region',
+        detail: incidents.length ? incidents.length + ' alerts' : system.facilities.length + ' sites',
+        state: incidents.length ? 'flagged' : undefined,
+        position: add(center, [localCenter[0] - size[0] * .24, 2.3, localCenter[2] + size[1] * .26]),
+        onClick: () => onFocus(system.id),
+      }]
+    }
+    if (scope.systemId !== system.id) return []
+    const labels: SceneLabel[] = region.facilities
+      .filter(({ facility }) => !scope.facilityId || scope.facilityId === facility.id)
+      .map(({ facility, pad }) => {
+        const fill = read(data, facility.tank.id, 'level_pct', at)
+        const failed = read(data, facility.pump.id, 'status', at) === 2
+        const flagged = incidents.some((alert) => alert.facilityId === facility.id)
+        return {
+          id: facility.id, title: siteName(facility.id, system.id), detail: fill === undefined ? '—' : Math.round(fill) + '%', kind: 'facility',
+          state: failed ? 'failed' : flagged ? 'flagged' : undefined, position: add(add(center, pad), [0, 2.53, .15]),
+          onClick: () => onFocus(facility.id),
+        }
+      })
+    if (!scope.facilityId) {
+      labels.push({
+        id: system.disposal.id, title: 'Disposal', kind: 'minor', position: add(add(center, region.disposal), [0, 2, 0]),
+        onClick: () => onSelect(system.disposal.id),
+      }, {
+        id: yardId(system.id), title: 'Yard · ' + system.fleetSize, kind: 'minor', position: add(add(center, region.yard), [0, 1.8, 0]),
+        onClick: () => onSelect(yardId(system.id)),
+      })
+    }
+    return labels
+  })
+}
+
+function ProjectLabels({ labels, nodes }: { labels: SceneLabel[]; nodes: Map<string, HTMLButtonElement> }) {
+  const position = useMemo(() => new Vector3(), [])
+  useFrame(({ camera, size }) => {
+    camera.updateMatrixWorld()
+    for (const label of labels) {
+      const node = nodes.get(label.id)
+      if (!node) continue
+      position.set(...label.position).project(camera)
+      const visible = position.z > -1 && position.z < 1 && Math.abs(position.x) < .99 && Math.abs(position.y) < .97
+      node.style.visibility = visible ? 'visible' : 'hidden'
+      if (visible) node.style.transform = 'translate(' + ((position.x + 1) / 2 * size.width) + 'px,' + ((1 - position.y) / 2 * size.height) + 'px) translate(-50%, -50%)'
+    }
+  })
+  return null
+}
+
+function World({ world, labels, nodes, ...props }: SceneProps & { world: WorldLayout; labels: SceneLabel[]; nodes: Map<string, HTMLButtonElement> }) {
   const reduced = useMemo(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches, [])
-  const { target, span } = framing(world, props)
+  const { target, span, bounds } = useMemo(() => framing(world, props), [world, props.scope, props.selected, props.data])
+  const lightTarget = useMemo(() => new Object3D(), [])
+  const shadowWidth = Math.min(65, Math.max(12, span * .6))
   return <>
     <ContextWatcher onLost={props.onContextLost} />
     <color attach="background" args={['#213b42']} />
     <hemisphereLight args={['#dfebdf', '#778273', 2.15]} />
-    <directionalLight position={[-40, 60, 25]} intensity={2.4} color="#ffe5b9" />
+    <primitive object={lightTarget} position={target} />
+    <directionalLight position={add(target, [-40, 60, 25])} target={lightTarget} intensity={2.4} color="#ffe5b9"
+      castShadow={Boolean(props.scope.systemId)} shadow-mapSize={[1024, 1024]} shadow-normalBias={.055}
+      shadow-camera-left={-shadowWidth} shadow-camera-right={shadowWidth} shadow-camera-top={shadowWidth} shadow-camera-bottom={-shadowWidth} />
     <directionalLight position={[35, 12, -30]} intensity={.62} color="#a1cecf" />
-    <gridHelper args={[1600, 160, '#365056', '#30494e']} position={[0, -1.08, 0]} />
+    <gridHelper args={[1200, 240, '#355054', '#2a4549']} position={[0, -1.08, 0]} />
     {world.regions.map((region) => <Region key={region.system.id} {...props} region={region} reduced={reduced} />)}
-    <CameraRig target={target} span={span} focusRequest={props.focusRequest} reduced={reduced} />
+    <CameraRig target={target} span={span} bounds={bounds} focusRequest={props.focusRequest} reduced={reduced} />
+    <ProjectLabels labels={labels} nodes={nodes} />
   </>
 }
 
 export default function NetworkScene(props: SceneProps) {
-  return <Canvas dpr={[1, 1.5]} camera={{ position: [100, 95, 130], fov: 39, near: .2, far: 2000 }} gl={{ antialias: true }}
-    fallback={<span className="scene-unavailable">WebGL is unavailable. Choose List to browse equipment.</span>}>
-    <World {...props} />
-  </Canvas>
+  const world = useMemo(() => layoutWorld(props.data), [props.data])
+  const labels = mapLabels(world, props)
+  const nodes = useRef(new Map<string, HTMLButtonElement>())
+  return <>
+    <Canvas shadows="percentage" dpr={[1, 1.5]} camera={{ position: [100, 95, 130], fov: 39, near: .2, far: 2000 }} gl={{ antialias: true }}
+      fallback={<span className="scene-unavailable">WebGL is unavailable. Choose List to browse equipment.</span>}>
+      <World {...props} world={world} labels={labels} nodes={nodes.current} />
+    </Canvas>
+    <div className="scene-label-overlay" aria-label="Spatial asset labels">
+      {labels.map((label) => <button key={label.id}
+        className={'scene-label ' + label.kind + '-label' + (label.state ? ' ' + label.state : '')}
+        ref={(element) => { if (element) nodes.current.set(label.id, element); else nodes.current.delete(label.id) }}
+        onClick={label.onClick}>
+        {label.kind !== 'minor' && <i />}<strong>{label.title}</strong>{label.detail && <span>{label.detail}</span>}
+      </button>)}
+    </div>
+  </>
 }

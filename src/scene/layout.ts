@@ -59,8 +59,8 @@ export function layoutWorld(data: Dataset): WorldLayout {
     }
   })
   const largest = Math.max(...regions.flatMap((region) => region.size))
-  const scale = largest * Math.max(1, Math.sqrt(regions.length)) * 0.8
-  const positions = separate(project(data.systems.map((system) => system.center), scale), largest * 1.16)
+  const scale = largest * Math.max(1, Math.sqrt(regions.length)) * 0.54
+  const positions = separate(project(data.systems.map((system) => system.center), scale), largest * 1.03)
   for (let i = 0; i < regions.length; i++) {
     const region = regions[i]
     region.center = [positions[i][0] - region.localCenter[0], 0, positions[i][1] - region.localCenter[2]]

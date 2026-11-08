@@ -14,7 +14,10 @@ class SceneBoundary extends Component<{ children: ReactNode; fallback: ReactNode
 
 export function SpatialView({ focusRequest, ...props }: MapProps & { focusRequest: number }) {
   const [mode, setMode] = useState<'3d' | 'list'>('3d')
-  const [lost, setLost] = useState(false)
+  const [lost, setLost] = useState(() => {
+    try { return !document.createElement('canvas').getContext('webgl2') }
+    catch { return true }
+  })
   const list = <NetworkMap {...props} />
   return <>
     {mode === 'list' || lost ? list : <SceneBoundary fallback={list}>
