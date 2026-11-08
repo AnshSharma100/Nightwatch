@@ -1,0 +1,32 @@
+import assert from 'node:assert/strict'
+import { loadEnv } from 'vite'
+import { nvidiaCompletion, prepareInvestigation } from '../server/nemotron.ts'
+import { recordingRegistry } from '../server/datasets.ts'
+import { investigate } from '../src/agent/investigate.ts'
+import { defaultModel } from '../src/agent/contracts.ts'
+
+const env = loadEnv('development', process.cwd(), 'NVIDIA_')
+if (!env.NVIDIA_API_KEY) {
+  console.error('Missing NVIDIA_API_KEY. Add it to .env.local in the NIGHTWATCH repository root.')
+  process.exitCode = 2
+} else {
+  const registry = recordingRegistry()
+  const id = registry.register('local-smoke', { practice: 'snapshot_2026-10-10T0900' })
+  const recording = registry.find(id, 'local-smoke')!
+  const context = prepareInvestigation(recording, { at: recording.data.now, systemId: 'S4', facilityId: 'S4_FACILITY_A' })
+  const successful = new Set<string>()
+  try {
+    await investigate(context, nvidiaCompletion({
+      apiKey: env.NVIDIA_API_KEY, baseUrl: env.NVIDIA_BASE_URL, model: env.NVIDIA_MODEL,
+    }, AbortSignal.timeout(80_000)), (entry) => {
+      if (entry.ok) successful.add(entry.name)
+      console.log(entry.name, entry.ok ? 'completed' : 'returned a tool error')
+    }, 'Why should I not send both trucks to S4_FACILITY_A? Simulate one trip from each available truck sent there now and compare the alternative with the recommended plan.')
+    assert.ok(successful.has('simulate_alternative'), 'Model did not simulate the requested alternative.')
+    assert.ok(successful.has('compare_plans'), 'Model did not compare computed plans.')
+    console.log('Live investigation passed:', env.NVIDIA_MODEL || defaultModel)
+  } catch (error) {
+    console.error((error as Error).message)
+    process.exitCode = 1
+  }
+}

@@ -12,7 +12,8 @@
     "validate:eog": "node --experimental-strip-types scripts/validate-eog.ts",
     "test:browser": "playwright test",
     "validate:plans": "node --experimental-strip-types scripts/validate-plans.ts",
-    "setup:field": "node scripts/setup-field.mjs"
+    "setup:field": "node scripts/setup-field.mjs",
+    "test:nvidia": "node --experimental-strip-types scripts/test-nvidia.ts"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.0",

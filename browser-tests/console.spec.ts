@@ -105,6 +105,7 @@ test('authorizes field enrollment, opens the assignment link, and syncs progress
   await workflow.locator(':scope > summary').click()
   await workflow.getByLabel('Control-room code').fill('playwright-control-code')
   await workflow.getByRole('button', { name: 'Sign in' }).click()
+  await expect(workflow.getByRole('button', { name: 'Begin review' })).toBeVisible()
   expect((await page.request.post('/api/nemotron', { data: {} })).status()).toBe(503)
   await workflow.getByRole('button', { name: 'Begin review' }).click()
   const enrollment = workflow.getByText('Enroll a demo field device')
