@@ -134,6 +134,8 @@
   .investigator-form label { display: grid; gap: 4px; }
   .investigator-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
   .investigator-form .investigator-answer { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .investigator-outcomes { border-top: 1px solid var(--line); padding-top: 6px; }
+  .investigator-outcomes h4 { margin-bottom: 3px; font-size: 12px; }
   .investigator-trace summary { cursor: pointer; color: var(--teal); font-size: 12px; }
   .investigator-trace ol { padding-left: 16px; }
   .investigator-trace pre { overflow: auto; max-height: 170px; font: 500 11px/1.4 var(--mono); color: var(--muted); }

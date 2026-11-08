@@ -10,11 +10,18 @@ import { money, stamp } from './format.ts'
 interface Selection { data: Dataset; at: number; systemId: string; facilityId?: string; manual?: Plan }
 interface Result { summary?: string; trace?: AuditEntry[]; recommendedCost?: number; error?: string }
 
-function toolCost(audit: AuditEntry[], name: string, field: 'outcome' | 'recommended') {
-  type Cost = { costs_usd?: { total?: number } }
+interface ToolPlan {
+  costs_usd?: { total?: number }
+  facilities?: { facility_id: string; auto_shut_in_after_min: number | null }[]
+}
+
+function toolPlan(audit: AuditEntry[], name: string, field: 'outcome' | 'recommended' | 'alternative') {
   const entry = audit.findLast((item) => item.ok && item.name === name)
-  const value = (entry?.result as Partial<Record<typeof field, Cost>> | undefined)?.[field]?.costs_usd?.total
-  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  return (entry?.result as Partial<Record<typeof field, ToolPlan>> | undefined)?.[field]
+}
+
+function automaticSites(plan?: ToolPlan) {
+  return plan?.facilities?.filter((site) => site.auto_shut_in_after_min !== null).map((site) => site.facility_id)
 }
 
 function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: (text: string) => void }) {
@@ -29,8 +36,12 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
   const request = useRef<AbortController | null>(null)
   const endpoint = '/api/nemotron'
   const system = context.data.systems.find((item) => item.id === context.systemId)
-  const cost = toolCost(audit, 'simulate_alternative', 'outcome')
-  const recommendedCost = recommended ?? toolCost(audit, 'compare_plans', 'recommended')
+  const recommendedPlan = toolPlan(audit, 'compare_plans', 'recommended')
+  const alternativePlan = toolPlan(audit, 'compare_plans', 'alternative') ?? toolPlan(audit, 'simulate_alternative', 'outcome')
+  const cost = alternativePlan?.costs_usd?.total
+  const recommendedCost = recommended ?? recommendedPlan?.costs_usd?.total
+  const recommendedShutIns = automaticSites(recommendedPlan)
+  const alternativeShutIns = automaticSites(alternativePlan)
   const enabled = status?.configured && status.authorized
 
   useEffect(() => {
@@ -100,6 +111,13 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
       {recommendedCost !== undefined && <><dt>Recommended simulated cost</dt><dd>{money(recommendedCost)}</dd></>}
       {cost !== undefined && <><dt>Alternative simulated cost</dt><dd>{money(cost)}</dd></>}
     </dl>}
+    {(recommendedShutIns || alternativeShutIns) && <section className="investigator-outcomes" aria-label="Verified automatic shut-ins">
+      <h4>Projected automatic shut-ins</h4>
+      <dl className="values">
+        {recommendedShutIns && <><dt>Recommended</dt><dd>{recommendedShutIns.join(', ') || 'None'}</dd></>}
+        {alternativeShutIns && <><dt>Alternative</dt><dd>{alternativeShutIns.join(', ') || 'None'}</dd></>}
+      </dl>
+    </section>}
     {summary && onDraft && audit.some((entry) => entry.ok && entry.name === 'draft_briefing') && <div><button className="small-btn"
       onClick={() => { onDraft(summary); setDrafted(true) }}>{drafted ? 'Draft available in Incident workflow' : 'Use as editable assignment draft'}</button></div>}
     {audit.length > 0 && <details className="investigator-trace"><summary>Tool trace · {audit.length} calls</summary><ol aria-label="Nemotron tool calls">

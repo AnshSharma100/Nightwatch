@@ -137,7 +137,7 @@ test('preserves safe model prose and omits repeated unsupported quantities', asy
   }, () => {})
   assert.equal(round, 3)
   assert.match(result, /ties up the shared fleet/)
-  assert.match(result, /filtered numerical prose/)
+  assert.match(result, /filtered forecast or numerical details/)
   assert.doesNotMatch(result, /999999/)
 })
 
@@ -159,4 +159,17 @@ test('asks for the missing evidence when the model ends an investigation early',
   }, (entry) => audit.push(entry))
   assert.match(result, /verified plan comparison/)
   assert.deepEqual(audit.map(({ name }) => name), ['get_incidents', 'compare_plans', 'forecast_shutdown'])
+})
+
+
+test('keeps site-specific shutdown claims out of agent prose even when they contain no quantities', async () => {
+  let round = 0
+  const result = await investigate(context(), async () => {
+    round++
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
+    return { role: 'assistant', content: 'Concentrating fleet resources limits the options elsewhere. The recommended plan keeps both sites from shutting in. The simulated comparison describes the tradeoff.' }
+  }, () => {})
+  assert.equal(round, 3)
+  assert.match(result, /limits the options elsewhere/)
+  assert.doesNotMatch(result, /keeps both sites/)
 })
