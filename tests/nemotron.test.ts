@@ -31,12 +31,12 @@ test('executes real analysis tools on the frozen snapshot and returns model expl
         call('get_sensor_window', '{"asset_id":"A/tank","metric":"level_pct"}'),
       ],
     }
-    const tools = Object.fromEntries(messages.filter((message) => message.role === 'tool').map((message) => [message.tool_call_id, JSON.parse(message.content)]))
+    const tools = Object.fromEntries(messages.filter((message) => message.role === 'tool').map((message) => [message.tool_call_id, JSON.parse(message.content).data]))
     assert.equal(tools.get_incidents.incidents[0].asset_id, 'A/pump')
     assert.equal(tools.forecast_shutdown[0].shutdown_limit_pct, 92)
     assert.equal(tools.compare_plans.recommended.costs_usd.total, snapshot.recommended.costs.total)
     assert.ok(tools.get_sensor_window.every((point: { timestamp: string }) => Date.parse(point.timestamp) / 1000 <= snapshot.scenario.at))
-    return { role: 'assistant', content: 'The response compares measured conditions and simulated costs.' }
+    return { role: 'assistant', content: 'The response compares measured conditions and simulated costs. [[F1]]' }
   }, (entry) => audit.push(entry))
   assert.match(result, /measured conditions/)
   assert.equal(audit.length, 4)
@@ -80,8 +80,8 @@ test('uses the same simulator for an operator question about a truck alternative
     }
     const output = messages.find((message) => message.role === 'tool' && message.tool_call_id === 'compare_plans')
     assert.ok(output)
-    assert.equal(JSON.parse(output.content!).alternative.costs_usd.trucking, 200)
-    return { role: 'assistant', content: 'The simulator calculated the cost of dedicating the shared fleet to this site.' }
+    assert.equal(JSON.parse(output.content!).data.alternative.costs_usd.trucking, 200)
+    return { role: 'assistant', content: 'The simulator calculated the cost of dedicating the shared fleet to this site. [[F1]]' }
   }, (entry) => audit.push(entry), question)
   assert.match(result, /simulator calculated/)
   assert.ok(audit.every((entry) => entry.ok))
@@ -120,27 +120,23 @@ test('requests a qualitative rewrite instead of publishing unverified numbers', 
     round++
     if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
     if (round === 2) return { role: 'assistant', content: 'It will cost $999999.' }
-    assert.match(messages.at(-1)!.content ?? '', /Rewrite/)
-    return { role: 'assistant', content: 'The comparison shows the projected costs for the simulated plans.' }
+    assert.match(messages.at(-1)!.content ?? '', /Revise/)
+    return { role: 'assistant', content: 'The comparison shows the projected costs for the simulated plans. [[F1]]' }
   }, () => {})
   assert.equal(round, 3)
   assert.match(result, /projected costs/)
 })
 
 
-test('preserves safe model prose and omits repeated unsupported quantities', async () => {
+test('rejects fabricated claims instead of silently deleting the useful answer', async () => {
   let round = 0
-  const result = await investigate(context(), async () => {
+  await assert.rejects(investigate(context(), async () => {
     round++
     if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
-    return { role: 'assistant', content: 'The proposed dispatch ties up the shared fleet. It costs $999999. Compare the timing before committing another truck.' }
-  }, () => {})
-  assert.equal(round, 3)
-  assert.match(result, /ties up the shared fleet/)
-  assert.match(result, /filtered forecast or numerical details/)
-  assert.doesNotMatch(result, /999999/)
+    return { role: 'assistant', content: 'It costs $999999. [[F1]]' }
+  }, () => {}), /could not ground/)
+  assert.equal(round, 4)
 })
-
 
 test('asks for the missing evidence when the model ends an investigation early', async () => {
   let round = 0
@@ -155,21 +151,77 @@ test('asks for the missing evidence when the model ends an investigation early',
       return { role: 'assistant', content: null, tool_calls: [call('compare_plans'), call('forecast_shutdown')] }
     }
     assert.equal(mustUseTool, false)
-    return { role: 'assistant', content: 'The recorded fault and verified plan comparison explain the response.' }
+    return { role: 'assistant', content: 'The recorded fault and verified plan comparison explain the response. [[F1]]' }
   }, (entry) => audit.push(entry))
   assert.match(result, /verified plan comparison/)
   assert.deepEqual(audit.map(({ name }) => name), ['get_incidents', 'compare_plans', 'forecast_shutdown'])
 })
 
 
-test('keeps site-specific shutdown claims out of agent prose even when they contain no quantities', async () => {
+test('keeps invented shutdown outcomes out of prose and resolves complete computed statements', async () => {
+  const { resolveEvidence } = await import('../src/agent/evidence.ts')
+  const facts = new Map([['F1', 'Recommended plan: A avoids automatic shut-in through its simulated repair horizon.']])
+  assert.throws(() => resolveEvidence('Both sites avoid shutting in. [[F1]]', facts, []), /complete answer_facts/)
+  assert.throws(() => resolveEvidence('The cost is $905. [[F1]]', facts, []), /complete answer_facts/)
+  assert.throws(() => resolveEvidence('[[F99]]', facts, []), /only fact IDs/)
+  assert.equal(resolveEvidence('This is the calculated outcome. [[F1]]', facts, []), 'This is the calculated outcome. ' + facts.get('F1'))
+})
+
+test('places computed costs, truck jobs and shutdown facts in the actual answer', async () => {
+  const snapshot = context()
+  const result = await investigate(snapshot, async (messages, first) => {
+    if (first) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
+    const payload = JSON.parse(messages.find((message) => message.role === 'tool' && message.tool_call_id === 'compare_plans')!.content!)
+    const facts = payload.answer_facts.filter((fact: { statement: string }) => fact.statement.startsWith('Recommended plan'))
+    return { role: 'assistant', content: 'Use the computed response and review its timing. ' + facts.map((fact: { id: string }) => '[[' + fact.id + ']]').join(' ') }
+  }, () => {})
+  assert.match(result, /estimated total/)
+  assert.match(result, /lost oil\/gas revenue/)
+  assert.match(result, /automati(?:c|cally)/)
+  assert.doesNotMatch(result, /filtered|\[\[F/)
+})
+
+test('final answer tool preserves verified facts while rejecting invented numbers and unknown citations', async () => {
   let round = 0
+  const audit: AuditEntry[] = []
   const result = await investigate(context(), async () => {
     round++
     if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
-    return { role: 'assistant', content: 'Concentrating fleet resources limits the options elsewhere. The recommended plan keeps both sites from shutting in. The simulated comparison describes the tradeoff.' }
-  }, () => {})
-  assert.equal(round, 3)
-  assert.match(result, /limits the options elsewhere/)
-  assert.doesNotMatch(result, /keeps both sites/)
+    if (round === 2) return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation: 'Unsupported', fact_ids: 'F9999' }))] }
+    return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation: 'It costs $999999.', fact_ids: 'F1,F2,F1' }))] }
+  }, (entry) => audit.push(entry))
+  assert.match(result, /recorded pump failure/)
+  assert.match(result, /tank fill/)
+  assert.doesNotMatch(result, /999999|F9999|filtered/)
+  assert.equal(result.split('recorded pump failure').length, 2)
+  assert.equal(audit.at(-2)?.ok, false)
+  assert.equal(audit.at(-1)?.ok, true)
+})
+
+test('field briefing remains an inspection draft scoped to the selected facility', async () => {
+  const snapshot = { ...context(), selectedFacilityId: 'A' }
+  const audit: AuditEntry[] = []
+  await investigate(snapshot, async (_messages, first) => first
+    ? { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans'), call('draft_briefing', '{"audience":"field"}')] }
+    : { role: 'assistant', content: 'Review the evidence before approving the inspection. [[F1]]' }, (entry) => audit.push(entry))
+  const briefing = audit.find((entry) => entry.name === 'draft_briefing')!.result as { instructions: string[] }
+  assert.equal(briefing.instructions.length, 1)
+  assert.match(briefing.instructions[0], /Inspect A\/pump at A/)
+  assert.match(briefing.instructions[0], /does not authorize equipment changes/)
+  assert.ok(briefing.instructions[0].length <= 500)
+})
+
+test('requires comparison of the actual simulated alternative before publishing an answer', async () => {
+  let round = 0
+  const audit: AuditEntry[] = []
+  const result = await investigate(context(), async () => {
+    round++
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans'), call('simulate_alternative', '{"jobs":[{"truck":1,"facility_id":"A","dispatch_min":0,"trips":1}],"shut_ins":[]}')] }
+    if (round === 2) return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', '{"explanation":"Compare the plans.","fact_ids":"F1"}')] }
+    if (round === 3) return { role: 'assistant', content: null, tool_calls: [call('compare_plans', '{"alternative_id":"alternative-1"}')] }
+    return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', '{"explanation":"Compare the plans.","fact_ids":"F1"}')] }
+  }, (entry) => audit.push(entry))
+  assert.equal(audit.find((entry) => entry.name === 'answer_investigation')?.ok, false)
+  assert.match(result, /The proposed alternative costs/)
+  assert.match(result, /Compared with the recommended plan/)
 })

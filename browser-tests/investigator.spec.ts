@@ -1,6 +1,23 @@
 import { expect, test } from '@playwright/test'
 import { fixture } from '../tests/fixture.ts'
 
+test('answer shows the question and computed outcome without blank shutdown rows', async ({ page }) => {
+  await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })
+  await page.route('**/api/nemotron', (route) => route.fulfill({ json: route.request().method() === 'GET'
+    ? { configured: true, authorized: true }
+    : { summary: 'Recorded pump failure.\n\nRecommended plan: $905.00 in this controlled fixture.', recommendedCost: 905, trace: [
+      { name: 'compare_plans', ok: true, input: '{}', result: { recommended: { costs_usd: { total: 905 }, facilities: [{ facility_id: 'S4_FACILITY_A', auto_shut_in_after_min: null }] } } },
+    ] } }))
+  await page.goto('/')
+  await page.getByRole('combobox', { name: 'Dataset' }).selectOption('snapshot_2026-10-10T0900')
+  const investigator = page.locator('#asset-inspector .investigator')
+  await investigator.locator(':scope > summary').click()
+  await investigator.getByLabel('Investigation question').fill('Why send a truck here?')
+  await investigator.getByRole('button', { name: 'Investigate with Nemotron' }).click()
+  await expect(investigator.getByRole('heading', { name: 'Why send a truck here?' })).toBeVisible()
+  await expect(investigator.getByText('None in simulation', { exact: true })).toBeVisible()
+})
+
 test('AI questions and suggestions remain usable before signing in', async ({ page }) => {
   // This checks interaction and authorization guidance with a controlled status fixture.
   // It does not claim a real NVIDIA inference request.

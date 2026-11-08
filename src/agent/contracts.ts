@@ -8,6 +8,8 @@ interface Schema {
   items?: Schema
   required?: string[]
   additionalProperties?: boolean
+  maxItems?: number
+  maxLength?: number
 }
 
 const object = (properties: Record<string, Schema>, required = Object.keys(properties)): Schema =>
@@ -18,6 +20,10 @@ const tool = (name: string, description: string, parameters = object({})) =>
 
 const assetId = { type: 'string', description: 'Exact asset ID in the current system' }
 export const tools = [
+  tool('answer_investigation', 'Finish the investigation with an evidence-backed answer. The application inserts the exact cited fact statements after each explanation. Never repeat their numbers, truck assignments or shutdown predictions in explanation; put those in fact_ids only.', object({
+    explanation: { type: 'string', maxLength: 5000, description: 'Brief practical reasoning; leave quantities and operational outcomes to the selected facts. An empty string is allowed.' },
+    fact_ids: { type: 'string', maxLength: 2000, description: 'Comma-separated exact F IDs from answer_facts, for example F1,F3,F8. Choose only the facts needed to answer the question.' },
+  })),
   tool('get_incidents', 'Read active incidents and their detection evidence at the frozen recorded timestamp.'),
   tool('get_equipment', 'Inspect configuration and current readings for an asset in the system.', object({ asset_id: assetId })),
   tool('get_sensor_window', 'Read recorded sensor samples ending at the frozen timestamp.', object({
