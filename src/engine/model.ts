@@ -46,6 +46,7 @@ export const sensorMetrics: Partial<Record<AssetKind, readonly Metric[]>> = {
 export interface Point { at: number; value: number }
 export interface Dataset {
   name: string
+  networkKey: string
   systems: System[]
   facilities: Map<string, Facility>
   assets: Map<string, Asset>

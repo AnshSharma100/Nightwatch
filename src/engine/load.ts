@@ -71,6 +71,13 @@ function csvRow(line: string): string[] {
   return fields
 }
 
+function networkKey(network: JsonObject, ops: JsonObject) {
+  const config = JSON.stringify([network, ops])
+  let hash = 0xcbf29ce484222325n
+  for (let i = 0; i < config.length; i++) hash = BigInt.asUintN(64, (hash ^ BigInt(config.charCodeAt(i))) * 0x100000001b3n)
+  return hash.toString(16)
+}
+
 export function parseDataset(name: string, networkText: string, opsText: string, csv: string): Dataset {
   const network = json(networkText, 'network.json')
   const ops = json(opsText, 'ops.json')
@@ -189,5 +196,5 @@ export function parseDataset(name: string, networkText: string, opsText: string,
       if (points.some((point, i) => i > 0 && point.at === points[i - 1].at)) fail(asset, 'duplicate reading for ' + metric)
     }
   }
-  return { name, systems, facilities, assets, telemetry, times, start: times[0], now: times[times.length - 1], warningPct, shutdownPct, repairHours, truckCapacityBbl, truckCost, prices }
+  return { name, networkKey: networkKey(network, ops), systems, facilities, assets, telemetry, times, start: times[0], now: times[times.length - 1], warningPct, shutdownPct, repairHours, truckCapacityBbl, truckCost, prices }
 }
