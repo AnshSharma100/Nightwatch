@@ -1,6 +1,25 @@
 import { expect, test } from '@playwright/test'
 import { fixture } from '../tests/fixture.ts'
 
+test('a rules answer leads with the answer and keeps evidence expandable without unrelated costs', async ({ page }) => {
+  await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })
+  await page.route('**/api/nemotron', (route) => route.fulfill({ json: route.request().method() === 'GET'
+    ? { configured: true, authorized: true }
+    : { summary: 'No. Trucks remove water and buy time; they do not repair pumps.\n\nSupporting evidence:\n\nControlled operating-rule evidence.', recommendedCost: 3082.65,
+      trace: [{ name: 'get_operating_rules', ok: true, input: '{}', result: { rules: [] } }] } }))
+  await page.goto('/')
+  await page.getByRole('combobox', { name: 'Dataset' }).selectOption('snapshot_2026-10-10T0900')
+  const investigator = page.locator('#asset-inspector .investigator')
+  await investigator.locator(':scope > summary').click()
+  await investigator.getByLabel('Investigation question').fill('Does sending a truck repair the pump?')
+  await investigator.getByRole('button', { name: 'Investigate with Nemotron' }).click()
+  await expect(investigator.getByText('No. Trucks remove water and buy time; they do not repair pumps.')).toBeVisible()
+  await expect(investigator.getByText('Recommended simulated cost')).toHaveCount(0)
+  await expect(investigator.getByText('Controlled operating-rule evidence.')).toBeHidden()
+  await investigator.getByText('More evidence and plan details').click()
+  await expect(investigator.getByText('Controlled operating-rule evidence.')).toBeVisible()
+})
+
 test('answer shows the question and computed outcome without blank shutdown rows', async ({ page }) => {
   await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })
   await page.route('**/api/nemotron', (route) => route.fulfill({ json: route.request().method() === 'GET'
@@ -15,6 +34,7 @@ test('answer shows the question and computed outcome without blank shutdown rows
   await investigator.getByLabel('Investigation question').fill('Why send a truck here?')
   await investigator.getByRole('button', { name: 'Investigate with Nemotron' }).click()
   await expect(investigator.getByRole('heading', { name: 'Why send a truck here?' })).toBeVisible()
+  await investigator.getByText('Computed plan comparison', { exact: true }).click()
   await expect(investigator.getByText('None in simulation', { exact: true })).toBeVisible()
 })
 

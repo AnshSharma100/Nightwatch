@@ -41,11 +41,13 @@ function InvestigatorForm({ context, onDraft, onRequestAccess }: { context: Sele
   const recommendedPlan = toolPlan(audit, 'compare_plans', 'recommended')
   const alternativePlan = toolPlan(audit, 'compare_plans', 'alternative') ?? toolPlan(audit, 'simulate_alternative', 'outcome')
   const cost = alternativePlan?.costs_usd?.total
-  const recommendedCost = recommended ?? recommendedPlan?.costs_usd?.total
+  const recommendedCost = recommendedPlan ? recommended ?? recommendedPlan.costs_usd?.total : undefined
   const recommendedShutIns = automaticSites(recommendedPlan)
   const alternativeShutIns = automaticSites(alternativePlan)
   const enabled = status?.configured && status.authorized
-  const answerParagraphs = summary.split(/\n\s*\n/).filter(Boolean)
+  const [answer, supporting = ''] = summary.split('\n\nSupporting evidence:\n\n')
+  const answerParagraphs = answer.split(/\n\s*\n/).filter(Boolean)
+  const supportingParagraphs = supporting.split(/\n\s*\n/).filter(Boolean)
   const briefing = (audit.findLast((entry) => entry.ok && entry.name === 'draft_briefing')?.result as { instructions?: string[] } | undefined)?.instructions?.join('\n')
 
   useEffect(() => {
@@ -118,11 +120,12 @@ function InvestigatorForm({ context, onDraft, onRequestAccess }: { context: Sele
     {error && <p className="form-error" role="alert">{error}</p>}
     {summary && <section aria-label="Investigation answer"><h4>{answeredQuestion}</h4>
       {answerParagraphs.slice(0, 4).map((paragraph, index) => <p key={index} className="investigator-answer">{paragraph}</p>)}
-      {answerParagraphs.length > 4 && <details className="investigator-more"><summary>More evidence and plan details</summary>
-        {answerParagraphs.slice(4).map((paragraph, index) => <p key={index} className="investigator-answer">{paragraph}</p>)}
+      {(answerParagraphs.length > 4 || supportingParagraphs.length > 0) && <details className="investigator-more"><summary>More evidence and plan details</summary>
+        {[...answerParagraphs.slice(4), ...supportingParagraphs].map((paragraph, index) => <p key={index} className="investigator-answer">{paragraph}</p>)}
       </details>}
       <p className="investigator-attribution">Nemotron selects the evidence; NIGHTWATCH supplies the quoted readings, costs and simulated outcomes.</p>
     </section>}
+    {(recommendedPlan || alternativePlan) && <details className="investigator-more"><summary>Computed plan comparison</summary>
     {(recommendedCost !== undefined || cost !== undefined) && <dl className="values" aria-label="Verified tool costs">
       {recommendedCost !== undefined && <><dt>Recommended simulated cost</dt><dd>{money(recommendedCost)}</dd></>}
       {cost !== undefined && <><dt>Alternative simulated cost</dt><dd>{money(cost)}</dd></>}
@@ -134,6 +137,7 @@ function InvestigatorForm({ context, onDraft, onRequestAccess }: { context: Sele
         {alternativeShutIns && <><dt>Alternative</dt><dd>{alternativePlan?.facilities?.length === 0 ? 'No pump failures simulated' : alternativeShutIns.join(', ') || 'None in simulation'}</dd></>}
       </dl>
     </section>}
+    </details>}
     {summary && onDraft && briefing && <div><button className="small-btn" disabled={investigatedAt !== context.at}
       onClick={() => { onDraft(briefing); setDrafted(true) }}>{investigatedAt !== context.at ? 'Run again before using this draft' : drafted ? 'Draft available in Send to Field' : 'Use as editable assignment draft'}</button></div>}
     {audit.length > 0 && <details className="investigator-trace"><summary>Tool trace · {audit.length} calls</summary><ol aria-label="Nemotron tool calls">

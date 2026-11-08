@@ -11,6 +11,9 @@ if (!env.NVIDIA_API_KEY) {
   process.exitCode = 2
 } else {
   const registry = recordingRegistry()
+  const rulesQuestion = process.argv.includes('--rules') ? 'Does sending a truck actually repair the failed pump, or does it only buy time?' :
+    process.argv.includes('--late') ? 'What if the truck arrives after the tank hits the shutdown threshold? Can it restart the wells?' :
+      process.argv.includes('--complete') ? 'When a field engineer marks the assignment complete, does the fault disappear from the recorded data?' : null
   const single = process.argv.includes('--s2') || process.argv.includes('--briefing')
   const id = registry.register('local-smoke', { practice: single ? 'full_week' : 'snapshot_2026-10-10T0900' })
   const recording = registry.find(id, 'local-smoke')!
@@ -34,14 +37,21 @@ if (!env.NVIDIA_API_KEY) {
         }
       }
       console.log(entry.name, entry.ok ? 'completed' : 'returned a tool error: ' + (entry.result as { error: string }).error)
-    }, process.argv.includes('--briefing') ? 'Draft a concise field briefing for the selected pump failure, for the operator to review before assigning an inspection.' : single
+      if (process.argv.includes('--debug-answer') && entry.name === 'answer_investigation' && !entry.ok) console.log('Synthetic rehearsal answer:', entry.input)
+    }, rulesQuestion ?? (process.argv.includes('--briefing') ? 'Draft a concise field briefing for the selected pump failure, for the operator to review before assigning an inspection.' : single
       ? 'What is wrong at this facility, what evidence supports it, and what should I do next?'
-      : 'Why should I not send both trucks to S4_FACILITY_A? Simulate one trip from each available truck sent there now and compare the alternative with the recommended plan.')
-    if (!single) assert.ok(successful.has('simulate_alternative'), 'Model did not simulate the requested alternative.')
-    if (!single) assert.ok(alternative !== undefined, 'Model did not compare the alternative it simulated.')
+      : 'Why should I not send both trucks to S4_FACILITY_A? Simulate one trip from each available truck sent there now and compare the alternative with the recommended plan.'))
+    if (!single && !rulesQuestion) assert.ok(successful.has('simulate_alternative'), 'Model did not simulate the requested alternative.')
+    if (!single && !rulesQuestion) assert.ok(alternative !== undefined, 'Model did not compare the alternative it simulated.')
     if (process.argv.includes('--briefing')) assert.ok(successful.has('draft_briefing'), 'Model did not prepare the briefing evidence.')
-    assert.ok(successful.has('compare_plans'), 'Model did not compare computed plans.')
-    assert.match(explanation, /\$/)
+    if (rulesQuestion) {
+      assert.ok(successful.has('get_operating_rules'), 'Model did not check the operating rules.')
+      assert.ok(!successful.has('compare_plans'), 'A rules question should not become an unsolicited recommendation report.')
+      assert.match(explanation, /repair|recorded|historical/i)
+    } else if (!process.argv.includes('--briefing')) {
+      assert.ok(successful.has('compare_plans'), 'Model did not compare computed plans.')
+      assert.match(explanation, /\$/)
+    }
     assert.doesNotMatch(explanation, /filtered forecast|\[\[F\d+\]\]/)
     console.log('Live investigation passed:', env.NVIDIA_MODEL || defaultModel)
     if (recommended !== undefined) console.log('Best plan found · USD', recommended.toFixed(2))

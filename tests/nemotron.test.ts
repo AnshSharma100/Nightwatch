@@ -143,25 +143,26 @@ test('asks for the missing evidence when the model ends an investigation early',
   const audit: AuditEntry[] = []
   const result = await investigate(context(), async (messages, mustUseTool) => {
     round++
-    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents')] }
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('forecast_shutdown')] }
     if (round === 2) return { role: 'assistant', content: 'Premature conclusion.' }
     if (round === 3) {
       assert.equal(mustUseTool, true)
-      assert.match(messages.at(-1)!.content ?? '', /missing: forecast_shutdown, compare_plans/)
-      return { role: 'assistant', content: null, tool_calls: [call('compare_plans'), call('forecast_shutdown')] }
+      assert.match(messages.at(-1)!.content ?? '', /missing: get_incidents/)
+      return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('compare_plans')] }
     }
     assert.equal(mustUseTool, false)
     return { role: 'assistant', content: 'The recorded fault and verified plan comparison explain the response. [[F1]]' }
   }, (entry) => audit.push(entry))
   assert.match(result, /verified plan comparison/)
-  assert.deepEqual(audit.map(({ name }) => name), ['get_incidents', 'compare_plans', 'forecast_shutdown'])
+  assert.deepEqual(audit.map(({ name }) => name), ['forecast_shutdown', 'get_incidents', 'compare_plans'])
 })
 
 
-test('keeps invented shutdown outcomes out of prose and resolves complete computed statements', async () => {
+test('allows ordinary explanations but rejects invented quantities and unknown evidence', async () => {
   const { resolveEvidence } = await import('../src/agent/evidence.ts')
   const facts = new Map([['F1', 'Recommended plan: A avoids automatic shut-in through its simulated repair horizon.']])
-  assert.throws(() => resolveEvidence('Both sites avoid shutting in. [[F1]]', facts, []), /complete answer_facts/)
+  assert.match(resolveEvidence('A late truck cannot restart shut-in wells. [[F1]]', facts, [], true), /late truck/)
+  assert.throws(() => resolveEvidence('A avoids shut-in. [[F1]]', facts, []), /exact \[\[Fid\]\]/)
   assert.throws(() => resolveEvidence('The cost is $905. [[F1]]', facts, []), /complete answer_facts/)
   assert.throws(() => resolveEvidence('[[F99]]', facts, []), /only fact IDs/)
   assert.equal(resolveEvidence('This is the calculated outcome. [[F1]]', facts, []), 'This is the calculated outcome. ' + facts.get('F1'))
@@ -181,15 +182,18 @@ test('places computed costs, truck jobs and shutdown facts in the actual answer'
   assert.doesNotMatch(result, /filtered|\[\[F/)
 })
 
-test('final answer tool preserves verified facts while rejecting invented numbers and unknown citations', async () => {
+test('final answer tool asks for a corrected answer instead of silently discarding bad prose', async () => {
   let round = 0
   const audit: AuditEntry[] = []
   const result = await investigate(context(), async () => {
     round++
     if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
     if (round === 2) return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation: 'Unsupported', fact_ids: 'F9999' }))] }
-    return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation: 'It costs $999999.', fact_ids: 'F1,F2,F1' }))] }
+    if (round === 3) return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation: 'It costs $999999.', fact_ids: 'F1,F2,F1' }))] }
+    return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation: 'The pump is faulted; inspect it and verify conditions before approving field work.', fact_ids: 'F1,F2,F1' }))] }
   }, (entry) => audit.push(entry))
+  assert.match(result, /^The pump is faulted/)
+  assert.equal(round, 4)
   assert.match(result, /recorded pump failure/)
   assert.match(result, /tank fill/)
   assert.doesNotMatch(result, /999999|F9999|filtered/)
@@ -222,6 +226,34 @@ test('requires comparison of the actual simulated alternative before publishing 
     return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', '{"explanation":"Compare the plans.","fact_ids":"F1"}')] }
   }, (entry) => audit.push(entry))
   assert.equal(audit.find((entry) => entry.name === 'answer_investigation')?.ok, false)
-  assert.match(result, /The proposed alternative costs/)
+  assert.match(result, /^The proposed alternative costs/)
   assert.match(result, /Compared with the recommended plan/)
+})
+
+
+test('answers operating-rule questions directly without forcing a cost comparison', async () => {
+  for (const question of ['Does the truck repair the pump?', 'Can a late truck restart shut-in wells?']) {
+    const audit: AuditEntry[] = []
+    const answer = await investigate(context(), async (messages, first) => {
+      assert.equal(messages[1].content, question)
+      if (first) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('get_operating_rules')] }
+      const rules = JSON.parse(messages.find((message) => message.role === 'tool' && message.tool_call_id === 'get_operating_rules')!.content!).answer_facts
+      const explanation = question.includes('repair') ? 'No. The truck removes water and buys time; pump repair follows the modeled schedule.' : 'No. Once the wells shut in, a late truck can remove water but cannot restart them before modeled repair.'
+      return { role: 'assistant', content: null, tool_calls: [call('answer_investigation', JSON.stringify({ explanation, fact_ids: rules[question.includes('repair') ? 0 : 1].id }))] }
+    }, (entry) => audit.push(entry), question)
+    assert.match(answer, /^No\./)
+    assert.match(answer, /Supporting evidence:/)
+    assert.ok(audit.every((entry) => entry.ok))
+    assert.ok(!audit.some((entry) => entry.name === 'compare_plans'))
+    assert.doesNotMatch(answer, /recommended plan|estimated total/i)
+  }
+})
+
+test('rejects model attempts to operate equipment or execute arbitrary tools', async () => {
+  const audit: AuditEntry[] = []
+  let round = 0
+  await investigate(context(), async () => ++round === 1
+    ? { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('dispatch_truck'), call('execute_python')] }
+    : { role: 'assistant', content: 'I can investigate evidence, but only the operator can approve a field assignment. [[F1]]' }, (entry) => audit.push(entry))
+  assert.deepEqual(audit.filter((entry) => !entry.ok).map((entry) => entry.name), ['dispatch_truck', 'execute_python'])
 })

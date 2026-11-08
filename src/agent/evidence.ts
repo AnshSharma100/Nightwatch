@@ -23,6 +23,7 @@ export function toolFacts(entry: AuditEntry): string[] {
   if (!entry.ok) return []
   const result = entry.result
   switch (entry.name) {
+    case 'get_operating_rules': return (result as { rules: string[] }).rules
     case 'get_incidents': {
       const value = result as { system_id: string; incidents: { asset_id: string; category: string; evidence: string[] }[] }
       return value.incidents.length ? value.incidents.map((incident) =>
@@ -76,14 +77,20 @@ export function toolFacts(entry: AuditEntry): string[] {
   }
 }
 
-export function resolveEvidence(prose: string, facts: Map<string, string>, assetIds: string[]) {
+export function resolveEvidence(prose: string, facts: Map<string, string>, assetIds: string[], allowRules = false) {
   const references = [...prose.matchAll(/\[\[(F\d+)\]\]/g)]
   if (!references.length) throw new Error('Cite relevant answer_facts using [[F1]] references to support the answer.')
   if (references.some((match) => !facts.has(match[1]))) throw new Error('Use only fact IDs returned by successful tools in this investigation.')
   const explanation = prose.replace(/\[\[F\d+\]\]/g, '').replace(/^[ \t]*\d+[.)][ \t]+/gm, '• ')
   const withoutIds = [...assetIds].sort((a, b) => b.length - a.length).reduce((value, id) => value.replaceAll(id, ''), explanation)
-  if (/[\p{N}$€£]|\[\[/u.test(withoutIds) || /\b(?:shut(?:s|ting)?[\s\u2010-\u2014-]*(?:in|down)s?|stop(?:s|ping)? production|wells? (?:stop|restart|continue))\b/i.test(withoutIds)) {
+  if (/recorded[^.!?\n]*(?:until|when|after)[^.!?\n]*modeled repair/i.test(withoutIds)) {
+    throw new Error('Modeled repair affects only simulated futures. Recorded incident clearing requires subsequent recorded sensor evidence. Do not claim the repair timer clears recorded data.')
+  }
+  if (/[\p{N}$€£]|\[\[/u.test(withoutIds)) {
     throw new Error('Use complete answer_facts references for quantities, costs, truck schedules and shutdown outcomes; explain the practical reasoning in your own words around those facts.')
+  }
+  if (!allowRules && /\b(?:shut(?:s|ting)?[\s\u2010-\u2014-]*(?:in|down)s?|stop(?:s|ping)? production|wells? (?:stop|restart|continue)|avoid(?:s|ed)?|prevent(?:s|ed)?|protect(?:s|ed)?|unnecessary|no (?:added )?benefit)\b/i.test(withoutIds)) {
+    throw new Error('Site outcomes and intervention effectiveness must use exact [[Fid]] facts, not paraphrased claims. Explain the fleet allocation tradeoff without claiming which sites avoid shutdown or that an extra trip has no benefit. The computed comparison statements will show those outcomes.')
   }
   return prose.replace(/\[\[(F\d+)\]\]/g, (_match, id: string) => facts.get(id)!)
 }

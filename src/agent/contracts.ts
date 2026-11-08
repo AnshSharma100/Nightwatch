@@ -20,10 +20,11 @@ const tool = (name: string, description: string, parameters = object({})) =>
 
 const assetId = { type: 'string', description: 'Exact asset ID in the current system' }
 export const tools = [
-  tool('answer_investigation', 'Finish the investigation with an evidence-backed answer. The application inserts the exact cited fact statements after each explanation. Never repeat their numbers, truck assignments or shutdown predictions in explanation; put those in fact_ids only.', object({
-    explanation: { type: 'string', maxLength: 5000, description: 'Brief practical reasoning; leave quantities and operational outcomes to the selected facts. An empty string is allowed.' },
+  tool('answer_investigation', 'Answer the actual question directly, then explain why. fact_ids provides exact computed quantities and outcomes in expandable evidence. Do not replace the direct answer with a recommendation report.', object({
+    explanation: { type: 'string', maxLength: 5000, description: 'Required direct qualitative answer, two to five sentences. No numeric literals, percentages or currency amounts. Put supporting numerical facts in fact_ids. Explain the specific tradeoff or operating rule in plain language.' },
     fact_ids: { type: 'string', maxLength: 2000, description: 'Comma-separated exact F IDs from answer_facts, for example F1,F3,F8. Choose only the facts needed to answer the question.' },
   })),
+  tool('get_operating_rules', 'Read authoritative simulation and field-work rules: truck mitigation, repair timing, automatic shut-in, late arrival, playback, and assignment completion.'),
   tool('get_incidents', 'Read active incidents and their detection evidence at the frozen recorded timestamp.'),
   tool('get_equipment', 'Inspect configuration and current readings for an asset in the system.', object({ asset_id: assetId })),
   tool('get_sensor_window', 'Read recorded sensor samples ending at the frozen timestamp.', object({
