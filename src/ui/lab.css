@@ -35,9 +35,10 @@
   .branch-choice strong { color: var(--branch-color); font-size: 13px; }
   .branch-choice small { color: var(--muted); font-size: 11px; line-height: 1.25; }
   .branch-choice b { font-size: 16px; font-variant-numeric: tabular-nums; }
-  .plan-editor { flex-shrink: 0; padding: 9px 10px 13px; border-top: 1px solid var(--line); }
-  .plan-editor h3 { font-size: 14px; }
-  .plan-editor > p { margin: 4px 0 6px; font-size: 12px; }
+  .plan-editor { flex-shrink: 0; border-top: 1px solid var(--line); }
+  .plan-editor > summary { cursor: pointer; color: var(--teal); padding: 10px; font-size: 14px; font-weight: 700; }
+  .plan-editor-body { padding: 0 10px 12px; }
+  .plan-editor-body > p { margin: 0 0 6px; font-size: 12px; }
   .editor-fields { border: 0; min-width: 0; margin: 0; padding: 0; }
   .plan-editor-heading { display: flex; align-items: center; justify-content: space-between; gap: 5px; border-top: 1px solid var(--line); padding-block: 6px; }
   .plan-editor-heading h4 { display: flex; gap: 4px; align-items: center; font-size: 12px; }
@@ -111,7 +112,8 @@
     .branch-list { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; }
     .branch-choice { flex-direction: column; align-items: start; padding: 5px 4px; }
     .branch-choice b { font-size: 14px; }
-    .lab-map { min-height: min(350px, 56dvh); }
+    .lab-map { min-height: min(350px, 52dvh); }
+    .plan-editor > summary { min-height: 44px; }
     .lab-scrubber { padding-inline: 7px; gap: 6px; }
     .lab-scrubber > small { display: none; }
   }

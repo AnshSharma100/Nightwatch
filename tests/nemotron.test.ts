@@ -119,3 +119,17 @@ test('requests a qualitative rewrite instead of publishing unverified numbers', 
   assert.equal(round, 3)
   assert.match(result, /projected costs/)
 })
+
+
+test('preserves safe model prose and omits repeated unsupported quantities', async () => {
+  let round = 0
+  const result = await investigate(context(), async () => {
+    round++
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
+    return { role: 'assistant', content: 'The proposed dispatch ties up the shared fleet. It costs $999999. Compare the timing before committing another truck.' }
+  }, () => {})
+  assert.equal(round, 3)
+  assert.match(result, /ties up the shared fleet/)
+  assert.match(result, /filtered numerical prose/)
+  assert.doesNotMatch(result, /999999/)
+})

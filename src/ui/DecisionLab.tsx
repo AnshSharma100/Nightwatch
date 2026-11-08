@@ -32,6 +32,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
   const [minute, setMinute] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [editorOpen, setEditorOpen] = useState(() => window.matchMedia('(min-width: 621px)').matches)
   const [selectedBranch, selectBranch] = useState<BranchKey>('recommended')
   const [site, setSite] = useState(scenario.failures[0].facility.id)
   const [focusSite, setFocusSite] = useState<string | null>(null)
@@ -82,6 +83,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
       selectBranch('operator')
       setMinute(0)
       setDirty(false)
+      if (window.matchMedia('(max-width: 620px)').matches) setEditorOpen(false)
     } catch (error) {
       if (!controller.signal.aborted) setError((error as Error).message)
     } finally {
@@ -121,15 +123,17 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
             <b>{outcome ? money(outcome.costs.total) : '—'}</b>
           </button>)}
         </div>
-        <div className="plan-editor">
-          <h3>Edit operator plan</h3>
-          <p className="muted">Schedule full truck trips or hold individual wells through repair.</p>
-          <PlanEditor scenario={scenario} draft={draft} edit={edit} running={running} />
-          {error && <p className="form-error" role="alert">{error}</p>}
-          <div className="editor-actions"><button className="primary-btn" disabled={!dirty || running} onClick={() => void run()}>
-            {running ? 'Simulating…' : 'Run simulation'} <ArrowRight size={15} /></button>
-            {dirty && <small>Unsaved changes</small>}</div>
-        </div>
+        <details className="plan-editor" open={editorOpen} onToggle={(event) => setEditorOpen(event.currentTarget.open)}>
+          <summary>Edit operator plan</summary>
+          <div className="plan-editor-body">
+            <p className="muted">Schedule full truck trips or hold individual wells through repair.</p>
+            <PlanEditor scenario={scenario} draft={draft} edit={edit} running={running} />
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <div className="editor-actions"><button className="primary-btn" disabled={!dirty || running} onClick={() => void run()}>
+              {running ? 'Simulating…' : 'Run simulation'} <ArrowRight size={15} /></button>
+              {dirty && <small>Unsaved changes</small>}</div>
+          </div>
+        </details>
       </aside>
       <section className="lab-stage" aria-label="Simulated network">
         <div className="lab-pane-head"><div><span className="eyebrow">SIMULATED NETWORK</span><h2>{branch.label}</h2></div>

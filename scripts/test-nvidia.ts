@@ -15,16 +15,29 @@ if (!env.NVIDIA_API_KEY) {
   const recording = registry.find(id, 'local-smoke')!
   const context = prepareInvestigation(recording, { at: recording.data.now, systemId: 'S4', facilityId: 'S4_FACILITY_A' })
   const successful = new Set<string>()
+  let recommended: number | undefined
+  let alternative: number | undefined
   try {
-    await investigate(context, nvidiaCompletion({
+    const explanation = await investigate(context, nvidiaCompletion({
       apiKey: env.NVIDIA_API_KEY, baseUrl: env.NVIDIA_BASE_URL, model: env.NVIDIA_MODEL,
     }, AbortSignal.timeout(80_000)), (entry) => {
-      if (entry.ok) successful.add(entry.name)
+      if (entry.ok) {
+        successful.add(entry.name)
+        if (entry.name === 'compare_plans') {
+          type Cost = { costs_usd?: { total?: number } }
+          const result = entry.result as { recommended?: Cost; alternative?: Cost }
+          recommended = result.recommended?.costs_usd?.total ?? recommended
+          alternative = result.alternative?.costs_usd?.total ?? alternative
+        }
+      }
       console.log(entry.name, entry.ok ? 'completed' : 'returned a tool error')
     }, 'Why should I not send both trucks to S4_FACILITY_A? Simulate one trip from each available truck sent there now and compare the alternative with the recommended plan.')
     assert.ok(successful.has('simulate_alternative'), 'Model did not simulate the requested alternative.')
     assert.ok(successful.has('compare_plans'), 'Model did not compare computed plans.')
     console.log('Live investigation passed:', env.NVIDIA_MODEL || defaultModel)
+    if (recommended !== undefined) console.log('Best plan found · USD', recommended.toFixed(2))
+    if (alternative !== undefined) console.log('Proposed alternative · USD', alternative.toFixed(2))
+    console.log('Nemotron explanation:', explanation)
   } catch (error) {
     console.error((error as Error).message)
     process.exitCode = 1

@@ -318,7 +318,7 @@ function World({ world, labels, nodes, ...props }: SceneProps & { world: WorldLa
       castShadow={Boolean(props.scope.systemId)} shadow-mapSize={[1024, 1024]} shadow-normalBias={.055}
       shadow-camera-left={-shadowWidth} shadow-camera-right={shadowWidth} shadow-camera-top={shadowWidth} shadow-camera-bottom={-shadowWidth} />
     <directionalLight position={[35, 12, -30]} intensity={.62} color="#a1cecf" />
-    {world.regions.filter((region) => !props.projection || region.system.id === props.projection.systemId)
+    {world.regions.filter((region) => !props.scope.systemId || region.system.id === props.scope.systemId)
       .map((region) => <Region key={region.system.id} {...props} region={region} reduced={reduced} />)}
     <CameraRig target={target} span={span} bounds={bounds} focusRequest={props.focusRequest} reduced={reduced} />
     <ProjectLabels labels={labels} nodes={nodes} />
