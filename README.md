@@ -14,13 +14,13 @@ npm run dev
 
 Open the local URL printed by Vite. In this workspace the practice data is already prepared. On a new checkout, `npm run data` fetches the official source or uses an adjacent `.eog-reference` checkout. It copies only the three operational files per dataset into the local public directory. Supply an updated EOG checkout with `npm run data -- /path/to/HackUTD-ZeroDay`.
 
-Choose **Import data** and select `network.json`, `ops.json`, and `telemetry.csv` together to load a judging dataset. The topology and analysis rebuild from those files. **List** provides the same equipment and alert controls without WebGL.
+Choose **Import data** and select `network.json`, `ops.json`, and `telemetry.csv` together to load a judging dataset. The topology and analysis rebuild from those files. **List view** provides keyboard-accessible equipment navigation and is selected automatically when WebGL is unavailable.
 
 ## Demo walkthrough
 
 1. Open the full week and choose **Start Demo**. The recording starts with normal operations.
 2. Choose **Replay the lead-up**. The playhead pauses on the first pump fault. Inspect its recorded evidence, tank headroom, and time to the shutdown limit.
-3. Choose **Show shared fleet pressure**. The replay pauses when three pumps in the same system are down. The alert queue shows the response calculated for each facility.
+3. Choose **Show shared fleet pressure**. The replay pauses when three pumps in the same system are down. Select a priority alert to see its evidence, forecast, and recommended response in the inspector.
 4. Choose **Compare responses**. The Decision Lab compares a priority-based truck assignment with a shared-fleet recommendation and the no-action baseline. Play the paired maps, then inspect the tank and well outcomes and the oil, gas, and trucking costs.
 5. Close the lab and switch to a snapshot or import a different topology.
 
@@ -32,11 +32,17 @@ Choose **Import data** and select `network.json`, `ops.json`, and `telemetry.csv
 - `src/engine/optimize.ts` compares no action with joint fleet schedules and selective well shut-ins. Its search uses earliest available dispatches, groups of wells shut in together on five-minute boundaries, and a fixed search budget. The recommendation is the least-cost feasible plan found in that search. The manual editor supports later dispatches and staggered shut-ins.
 - `src/scene/` projects provided coordinates into a schematic low-poly world. Recorded telemetry drives tank fill, pump state and flow. Decision Lab truck positions interpolate between simulated schedule events for playback.
 
+## Operator and field workflow
+
+The operations strip shows the earliest projected shut-in, failures expected to shut in before repair, and the hourly production revenue exposed at those sites. The separate projected loss is oil and gas revenue expected from the current recording through repair if the operator takes no action. The shared calculation runs through the Vite workspace API and remains available in static builds through the same browser calculation.
+
+At the latest recorded timestamp, open **Incident workflow** in the inspector to review, monitor, dismiss, or confirm an alert. Confirmation enables **Assign to foreman**. The mobile-friendly **Field desk** shares the same server state and shows approved assignments for synthetic foremen and lease operators. Foremen can acknowledge and delegate, and the assigned role can log work and record a resolution. Workflow metadata is stored in the ignored local `.nightwatch/workflow.json` file, with a transition history. Historical evidence and equipment state remain separate.
+
 ## Optional NVIDIA Nemotron
 
 The [Nemotron endpoint](https://docs.api.nvidia.com/nim/reference/nvidia-nemotron-3_5-super-vl-120b-a12b-infer) can investigate a frozen Decision Lab snapshot. Set `NVIDIA_API_KEY` in the local environment or in an ignored `.env.local`, then restart `npm run dev` or `npm run preview`. The key stays in the loopback server bridge.
 
-Select **Investigate with Nemotron** in the lab to send the selected system's evidence and computed outcomes to NVIDIA. The tool log shows incident lookup, sensor queries, forecasting, and plan comparison as requested by the model. The deterministic engine supplies the measurements and costs. The browser tests and simulator run with the optional integration disabled.
+Open **AI Investigator** in the inspector or Decision Lab and ask a question about the frozen snapshot. Nemotron can retrieve incident evidence, read equipment and sensors, inspect fleet constraints, run the deterministic search, simulate alternatives, compare costs, and assemble a briefing draft. Running the investigation sends tool results for the selected system to NVIDIA. Expand **Tool trace** to inspect the inputs and outputs. The simulator and field workflow remain available when the model is offline.
 
 ## Verification
 

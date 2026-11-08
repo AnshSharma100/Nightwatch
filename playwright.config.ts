@@ -11,5 +11,5 @@ export default defineConfig({
     viewport: { width: 1440, height: 900 },
     launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
-  webServer: { command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4173 --strictPort', url, timeout: 30000 },
+  webServer: { command: 'node node_modules/vite/bin/vite.js --host 127.0.0.1 --port 4173 --strictPort', url, timeout: 30000, env: { NIGHTWATCH_WORKFLOW_FILE: 'test-results/workflow-' + Date.now() + '.json' } },
 })
