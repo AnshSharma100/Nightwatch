@@ -90,7 +90,3 @@ npm run test:nvidia
 Set `NIGHTWATCH_TEST_DATABASE_URL` to a **test** PostgreSQL instance for the migration and concurrency test. It creates a temporary schema. Set `NIGHTWATCH_TEST_SPLIT=1` and `DATABASE_URL` to a fresh browser-test database to run Playwright through the standalone API and built frontend. Browser tests use Chrome by default. Set `NIGHTWATCH_BROWSER=msedge` for Edge. The notification tests use mocked browser permission and push transport plus real VAPID signing and payload encryption. Installed-phone notification display requires a separate device test.
 
 Offline EOG validation reads the upstream answer keys only in the reference checkout. The full week produces 23 matching incident episodes. EVENT_9 yields $4,991.36 at the recorded tank level versus $5,016.00 at the reference’s rounded starting level. The selective shut-in and truck alternatives yield $1,958.33 and $905.00 using the same simulator.
-
-## AI assistance
-
-The project owner supplied the concept, design direction, requirements, and sponsor context. Codex assisted with code, design implementation, tests, and documentation. [HackUTD ZeroDay submission rules](https://hackutd-zeroday.devpost.com/rules)
