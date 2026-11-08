@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, FlaskConical, Focus, Pause, Play, Plus, RotateCcw, SkipForward, Truck, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, Copy, FlaskConical, Focus, Pause, Play, Plus, RotateCcw, SkipForward, Truck, X } from 'lucide-react'
 import type { PlanComparison } from '../../packages/contracts/operations.ts'
 import type { Alert } from '../../packages/domain/incidents.ts'
 import type { Dataset } from '../../packages/domain/model.ts'
@@ -92,14 +92,14 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
   }, [canPlay, minute, max, playing])
 
   function edit(plan: Plan) { setPlaying(false); setDraft(plan); setDirty(true); setError('') }
-  async function run() {
+  async function run(plan = draft) {
     const controller = new AbortController()
     request.current = controller
     setRunning(true)
     setPlaying(false)
     setError('')
     try {
-      const result = await comparePlans(data, { at: scenario.at, systemId: scenario.system.id, plan: draft }, controller.signal)
+      const result = await comparePlans(data, { at: scenario.at, systemId: scenario.system.id, plan }, controller.signal)
       if (controller.signal.aborted) return
       setManual(result.operator)
       selectBranch('operator')
@@ -111,6 +111,13 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
     } finally {
       if (!controller.signal.aborted) setRunning(false)
     }
+  }
+
+  function copyRecommended() {
+    const plan = structuredClone(search.best.plan)
+    edit(plan)
+    setEditorOpen(true)
+    void run(plan)
   }
 
   function focus(id: string) {
@@ -202,12 +209,17 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
             {scenario.failures.map(({ facility }) => <option key={facility.id} value={facility.id}>{facility.id}</option>)}
           </select></label>
           <FacilityComparison key={site} scenario={scenario} site={site} branches={branches} minute={minute} max={max} />
-          <details className="method" open><summary>Recommended actions</summary>
+          <section className="recommended-actions" aria-label="Recommended actions">
+            <div className="recommended-actions-heading"><h3>Recommended actions</h3>
+              <button className="small-btn" disabled={running} onClick={copyRecommended}><Copy size={14} /> Copy to operator plan</button>
+            </div>
+            <p className="muted">Replaces your operator draft with every recommended action and recalculates it.</p>
             {search.best.jobs.map((job) => <p key={job.truck + ':' + job.dispatchMin}><strong>Truck {job.truck} → {job.facilityId}</strong><br />
+              {job.trips} trip(s) ·{' '}
               Leave at +{duration(job.dispatchMin)} · Collect water at {job.arrivals.map((arrival) => '+' + duration(arrival)).join(', ')} · Available again at +{duration(job.freeMin)}</p>)}
             {search.best.plan.shutIns.map((stop) => <p key={stop.wellId}>Shut in {stop.wellId} at +{duration(stop.startMin)} through repair.</p>)}
             {!search.best.jobs.length && !search.best.plan.shutIns.length && <p>Monitor and wait for repair.</p>}
-          </details>
+          </section>
           <details className="method"><summary>Calculation and search limits</summary>
             <p>{search.evaluated} fleet schedules evaluated{search.limited ? ' within the schedule budget' : ''}. Search tries the earliest available dispatch and grouped well stops on five-minute boundaries. The editor also accepts staggered well stops and later departures.</p>
             <p>Truck travel, capacity, and return times come from the dataset. A full tank shuts in all wells through repair. Revenue uses configured oil and gas rates and prices.</p>
@@ -249,6 +261,7 @@ function PlanEditor({ scenario, draft, edit, running }: { scenario: Scenario; dr
   }
 
   return <fieldset disabled={running} className="editor-fields">
+    <p className="muted">Start is the first departure, not the arrival. For repeat collections at the same facility, increase Trips in one job; the simulator uses the configured cycle time.</p>
     <div className="plan-editor-heading"><h4><Truck size={14} /> Truck jobs</h4>
       <button className="small-btn" disabled={!reachable.length || !scenario.system.fleetSize || draft.jobs.length >= 60} onClick={() =>
         edit({ ...draft, jobs: [...draft.jobs, { facilityId: reachable[0].facility.id,

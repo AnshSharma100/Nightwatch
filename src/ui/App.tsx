@@ -76,6 +76,7 @@ export function App() {
   const workflow = useWorkflow()
   const [fieldDraft, setFieldDraft] = useState<{ key: string; text: string } | null>(null)
   const [approval, setApproval] = useState<{ key: string; selection: ApprovalPlan; response: string } | null>(null)
+  const [dispatchTarget, setDispatchTarget] = useState<string | null>(null)
   const cases = useMemo(() => new Map(workflow.entries.map((entry) => [caseKey(entry.incident), entry])), [workflow.entries])
   const request = useRef(0)
   const input = useRef<HTMLInputElement>(null)
@@ -111,12 +112,28 @@ export function App() {
     }).catch((error: Error) => {
       if (!controller.signal.aborted) {
         setPlaying(false)
+        setDispatchTarget(null)
         setIndex(data.times.indexOf(at))
         setError(error.message)
       }
     })
     return () => controller.abort()
   }, [data, requestedAt, snapshot?.at])
+
+  useEffect(() => {
+    if (!dispatchTarget || !data || refreshing || at !== data.now) return
+    const next = alerts.find((alert) => alert.assetId === dispatchTarget) ?? alerts.find((alert) => alert.verified)
+    setDispatchTarget(null)
+    setSelected(next?.assetId ?? dispatchTarget)
+    setInspectorOpen(true)
+    setReplayNotice(!next ? 'No active incidents at the latest recording. Historical faults can be investigated, but cannot receive new field assignments.' :
+      next.assetId !== dispatchTarget ? 'The historical fault is no longer active. Showing an active incident at the latest recording for review.' :
+        'Latest recording selected. Begin review, confirm the incident, then choose an available engineer.')
+    window.requestAnimationFrame(() => {
+      const fold = document.querySelector<HTMLDetailsElement>('#asset-inspector .workflow-fold')
+      if (fold) { fold.open = true; fold.scrollIntoView({ block: 'nearest' }) }
+    })
+  }, [dispatchTarget, data, refreshing, at, alerts])
 
   useEffect(() => {
     if (!data || !current || playing || refreshing || !scope.systemId || !inspectorOpen) return
@@ -139,6 +156,7 @@ export function App() {
     labRequest.current?.abort()
     setData(dataset)
     setApproval(null)
+    setDispatchTarget(null)
     setFieldDraft(null)
     setSnapshot(latest)
     setCalculation(null)
@@ -506,6 +524,8 @@ export function App() {
                 }
               }}
               person={workflow.person} configured={workflow.configured} onSignIn={workflow.signIn} onSignOut={workflow.signOut}
+              latestAt={data.now} preparing={refreshing || dispatchTarget !== null} onRetry={workflow.refresh}
+              onResume={() => { setDispatchTarget(alert.assetId); setApproval(null); scrub(data.times.length - 1) }}
               response={chosen?.response ?? response} approvalPlan={chosen?.selection} onDiscardPlan={() => setApproval(null)} draft={fieldDraft?.key === key ? fieldDraft.text : undefined} />
           }} />}
         </div>

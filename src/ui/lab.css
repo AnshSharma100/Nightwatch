@@ -145,6 +145,11 @@
 .trace-threshold-key { color: var(--coral); font-size: 12px; } .chart-explanation { font-size: 12px; line-height: 1.5; color: var(--muted); margin: 8px 0; }
 .future-card .trace svg text { font-size: 18px; }
 .future-card .trace figcaption i { width: 18px; }
+.recommended-actions { border-top: 1px solid var(--line); padding-top: 10px; font-size: 12px; line-height: 1.5; }
+.recommended-actions-heading { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 7px; }
+.recommended-actions-heading h3 { font-size: 13px; }
+.recommended-actions p { margin: 7px 0; }
+.editor-fields > p { font-size: 12px; line-height: 1.5; margin-bottom: 8px; }
 .consequence-review { border-block: 1px solid var(--line); margin: 12px 0; padding: 12px 0; font-size: 12px; line-height: 1.5; }
 .consequence-review h3 { font-size: 14px; } .consequence-review summary { cursor: pointer; margin: 8px 0; font-weight: 650; }
 .consequence-review article { margin: 10px 0; padding: 8px; border-left: 3px solid var(--line); }

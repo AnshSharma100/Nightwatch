@@ -96,5 +96,5 @@ export function useWorkflow(assignmentId?: string) {
     setEntries((current) => [...current.filter((item) => caseKey(item.incident) !== caseKey(entry.incident)), entry])
   }
 
-  return { entries, person, configured: session?.configured, available, loadError, update, signIn, signOut }
+  return { entries, person, configured: session?.configured, available, loadError, update, signIn, signOut, refresh }
 }

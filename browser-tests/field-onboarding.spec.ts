@@ -1,4 +1,38 @@
 import { expect, test } from '@playwright/test'
+import { fixture } from '../tests/fixture.ts'
+
+for (const clears of [false, true]) {
+  test('historical dispatch offers a recovery action when the fault ' + (clears ? 'has cleared' : 'is still active'), async ({ page }) => {
+    await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })
+    const source = fixture((id, metric, step, value) => id === 'A/pump' && metric === 'status' && step >= 2 && (!clears || step === 2) ? 2 : value)
+    let updates = 0
+    page.on('request', (request) => { if (request.url().endsWith('/api/workflow') && request.method() === 'POST') updates++ })
+    await page.goto('/')
+    await page.locator('input[type=file]').setInputFiles([
+      { name: 'network.json', mimeType: 'application/json', buffer: Buffer.from(source.network) },
+      { name: 'ops.json', mimeType: 'application/json', buffer: Buffer.from(source.ops) },
+      { name: 'telemetry.csv', mimeType: 'text/csv', buffer: Buffer.from(source.csv) },
+    ])
+    await expect(page.getByRole('combobox', { name: 'Dataset' })).toHaveValue('Imported dataset')
+    await page.getByRole('button', { name: 'Recorded timeline', exact: true }).click()
+    const slider = page.getByRole('slider', { name: 'Recorded timestamp' })
+    await slider.focus()
+    const frame = page.waitForResponse((response) => response.url().includes('/snapshot?at=') && response.ok())
+    await slider.press('ArrowLeft')
+    await frame
+    await page.getByRole('button', { name: /Pump failure A\/pump/ }).click()
+    const workflow = page.locator('.workflow-fold')
+    await workflow.locator(':scope > summary').click()
+    await expect(workflow.getByRole('heading', { name: 'Historical recording — dispatch paused' })).toBeVisible()
+    await expect(workflow.locator('.field-connection-hint')).toHaveCount(0)
+    await expect(workflow.getByRole('button', { name: 'Begin review' })).toHaveCount(0)
+    await workflow.getByRole('button', { name: 'Go to latest recording' }).click()
+    await expect(page.getByText('Latest recording', { exact: true })).toBeVisible()
+    if (clears) await expect(page.getByText('No active incidents at the latest recording. Historical faults can be investigated, but cannot receive new field assignments.')).toBeVisible()
+    else await expect(workflow.getByRole('button', { name: 'Begin review' })).toBeVisible()
+    expect(updates).toBe(0)
+  })
+}
 
 test('operator can find phone setup and generate a local QR using the configured public URL', async ({ page }) => {
   await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })

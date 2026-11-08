@@ -1,6 +1,50 @@
 import { expect, test } from '@playwright/test'
+import { fixture } from '../tests/fixture.ts'
+import type { PlanComparison } from '../packages/contracts/operations.ts'
 
 const snapshot = '/decision-lab?recording=practice-snapshot_2026-10-10T0900&system=S4&at=' + Date.parse('2026-10-10T09:00:00Z') / 1000
+
+for (const kind of ['well stops', 'repeat trips'] as const) {
+  test('copies recommended ' + kind + ' exactly and recalculates identical operator outcomes', async ({ page }) => {
+    let route = snapshot
+    if (kind === 'repeat trips') {
+      const source = fixture((id, metric, _step, value) => id === 'A/pump' && metric === 'status' ? 2 : value)
+      const ops = JSON.parse(source.ops)
+      ops.expected_repair_hours.pump_failure = 6
+      const imported = await page.request.post('/api/datasets/import', { data: {
+        network: source.network, ops: JSON.stringify(ops), telemetry: source.csv,
+      } })
+      expect(imported.ok()).toBeTruthy()
+      const recording = await imported.json()
+      route = '/decision-lab?recording=' + recording.id + '&system=' + encodeURIComponent('new/region') + '&at=' + recording.latest.at
+    }
+    const originalRequest = page.waitForResponse((response) => response.url().endsWith('/compare') && response.ok())
+    await page.goto(route)
+    const original = await (await originalRequest).json() as PlanComparison
+    const expected = original.search.best
+    if (kind === 'well stops') expect(expected.plan.shutIns.length).toBeGreaterThan(0)
+    else expect(expected.plan.jobs.some((job) => job.trips > 1)).toBe(true)
+    const lab = page.getByRole('main', { name: 'Decision Lab' })
+    // Overwrite an existing draft rather than appending recommended jobs to it.
+    await lab.getByRole('button', { name: 'Add job' }).click()
+    await lab.getByRole('button', { name: 'Add job' }).click()
+    const copiedRequest = page.waitForResponse((response) => response.url().endsWith('/compare') && response.ok())
+    await lab.getByRole('button', { name: 'Copy to operator plan' }).click()
+    const copiedResponse = await copiedRequest
+    expect(copiedResponse.request().postDataJSON().plan).toEqual(expected.plan)
+    const copied = await copiedResponse.json() as PlanComparison
+    expect(copied.operator).toEqual(expected)
+    await expect(lab.locator('.branch-choice.operator')).toHaveAttribute('aria-pressed', 'true')
+    await expect(lab.getByText('Operator and recommended plans tie', { exact: true })).toBeVisible()
+    await expect(lab.getByRole('button', { name: 'Play simulation' })).toBeVisible()
+    await expect(lab.getByRole('slider', { name: 'Simulated minutes after decision' })).toHaveValue('0')
+    const trips = lab.getByLabel('Trips', { exact: true })
+    await expect(trips).toHaveCount(expected.plan.jobs.length)
+    for (let i = 0; i < expected.plan.jobs.length; i++) await expect(trips.nth(i)).toHaveValue(String(expected.plan.jobs[i].trips))
+    await expect(lab.getByLabel('Well', { exact: true })).toHaveCount(expected.plan.shutIns.length)
+    if (process.env.NIGHTWATCH_SCREENSHOT_DIR) await page.screenshot({ path: process.env.NIGHTWATCH_SCREENSHOT_DIR + '/copy-' + kind.replace(' ', '-') + '.png' })
+  })
+}
 
 test('Butterfly Effect waits for decisions, advances at a readable speed, and pauses for editing', async ({ page }) => {
   await page.clock.install({ time: new Date('2026-11-08T12:00:00Z') })

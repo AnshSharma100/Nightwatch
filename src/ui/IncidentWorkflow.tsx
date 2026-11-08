@@ -145,10 +145,11 @@ function Enrollment({ incident }: { incident: WorkflowCase }) {
   </section>
 }
 
-export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft, approvalPlan, onDiscardPlan }: {
+export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft, approvalPlan, onDiscardPlan, latestAt, preparing, onResume, onRetry }: {
   incident: WorkflowCase; entry?: WorkflowEntry; available: boolean | null; editable: boolean; onUpdate: (change: WorkflowUpdate) => Promise<void>
   person?: Person | null; configured?: boolean; onSignIn: (code: string) => Promise<void>; onSignOut: () => Promise<void>
   response?: string; draft?: string; approvalPlan?: ApprovalPlan; onDiscardPlan?: () => void
+  latestAt: number; preparing: boolean; onResume: () => void; onRetry: () => Promise<void>
 }) {
   const delivery = entry?.assignment?.delivery
   return <details className="inspector-fold workflow-fold" open={approvalPlan ? true : undefined}>
@@ -161,9 +162,16 @@ export function IncidentWorkflow({ incident, entry, available, editable, onUpdat
       {entry?.assignment && <><p><BadgeCheck size={14} /> {entry.assignment.recipient.name}</p>
         {delivery && <p className="delivery-state">{deliveryLabel[delivery.status]}{delivery.failed > 0 ? ' · ' + delivery.failed + ' device request(s) failed' : ''}</p>}</>}
       {person?.role === 'control' ? <>
-        {editable && available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} approvalPlan={approvalPlan} /> :
-          <p>{!editable ? 'Review and assignment are available at the latest recording.' : available === false ? 'Workflow server unavailable.' : 'Connecting to the workflow server…'}</p>}
-        {entry ? <Enrollment incident={incident} /> : <p className="field-connection-hint">Connecting your phone? Tap <strong>Begin review</strong> above. The phone connection QR and link will appear here.</p>}
+        {!editable ? <section aria-label="Field dispatch availability">
+          <h4>{incident.observedAt !== latestAt ? 'Historical recording — dispatch paused' : 'Enable field review'}</h4>
+          <p>{incident.observedAt !== latestAt ? 'You are viewing ' + stamp(incident.observedAt) + '. The latest recording is ' + stamp(latestAt) + '. New assignments require the latest evidence; this fault may already have cleared.' :
+            'Exit guided demo or playback mode to review and approve field work at the latest recording.'}</p>
+          <button className="primary-btn" disabled={preparing} onClick={onResume}>{preparing ? 'Loading recording…' : incident.observedAt !== latestAt ? 'Go to latest recording' : 'Enable field review'}</button>
+          <p>You are already signed in as control room. You do not need to sign out.</p>
+        </section> : available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} approvalPlan={approvalPlan} /> :
+          <><p>{available === false ? 'The workflow server is unavailable. Your control-room sign-in is still active; retry the connection.' : 'Connecting to the workflow server…'}</p>
+            {available === false && <button className="small-btn" onClick={() => void onRetry()}>Retry connection</button>}</>}
+        {entry ? <Enrollment incident={incident} /> : editable && available && <p className="field-connection-hint">Connecting your phone? Tap <strong>Begin review</strong> above. The phone connection QR and link will appear here.</p>}
       </> : person ? <p>Sign out of the field account to use control-room tools.</p> : <>
         <p>Control-room sign-in identifies who approves field work. Sign in once; this browser remembers you for seven days.</p>
         <SignIn label="Control-room code" configured={configured} onSignIn={onSignIn} /></>}
