@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import QRCode from 'qrcode'
 import { BadgeCheck, ClipboardList, Copy } from 'lucide-react'
 import { actionLabel, assigneeName, availableActions, caseKey, stageLabel } from '../../packages/domain/workflow.ts'
-import type { Action, Actor, WorkflowCase, WorkflowEntry, WorkflowUpdate } from '../../packages/domain/workflow.ts'
+import type { Action, Actor, ApprovalPlan, WorkflowCase, WorkflowEntry, WorkflowUpdate } from '../../packages/domain/workflow.ts'
 import { deliveryLabel, personFor } from '../../packages/domain/personnel.ts'
 import type { Person } from '../../packages/domain/personnel.ts'
 import { stamp } from './format.ts'
@@ -28,9 +28,9 @@ export function SignIn({ label, configured, onSignIn }: { label: string; configu
   </form>
 }
 
-export function WorkflowActions({ actor, incident, entry, onUpdate, response, draft }: {
+export function WorkflowActions({ actor, incident, entry, onUpdate, response, draft, approvalPlan }: {
   actor: Actor; incident: WorkflowCase; entry?: WorkflowEntry; onUpdate: (change: WorkflowUpdate) => Promise<void>
-  response?: string; draft?: string
+  response?: string; draft?: string; approvalPlan?: ApprovalPlan
 }) {
   const [note, setNote] = useState('')
   const [recipientId, setRecipient] = useState('')
@@ -50,7 +50,7 @@ export function WorkflowActions({ actor, incident, entry, onUpdate, response, dr
     const submitted = note
     try {
       await onUpdate({ actor, action, incident, revision: entry?.history.length ?? 0, note: submitted,
-        recipientId: recipient?.person.id, response })
+        recipientId: recipient?.person.id, response, approvalPlan: action === 'assign' ? approvalPlan : undefined })
       setNote((current) => current === submitted ? '' : current)
     } catch (error) { setError((error as Error).message) }
     finally { setPending(false) }
@@ -82,7 +82,14 @@ export function WorkflowHistory({ entry }: { entry: WorkflowEntry }) {
   return <details className="workflow-history"><summary>Workflow history · {entry.history.length}</summary>
     <ol>{entry.history.map((event, index) => <li key={index}><strong>{actionLabel[event.action]}</strong>
       <span>{event.person?.name ?? assigneeName(event.actor, entry.incident)} · {stamp(event.at / 1000)}</span>
-      {event.recipient && <span>Recipient · {event.recipient.name}</span>}{event.note && <p>{event.note}</p>}</li>)}</ol>
+      {event.recipient && <span>Recipient · {event.recipient.name}</span>}{event.note && <p>{event.note}</p>}
+      {event.approvalPlan && <details><summary>Approved Butterfly plan · {stamp(event.approvalPlan.at)}</summary>
+        <p>System {event.approvalPlan.systemId}. Times below are minutes after that recording. These are simulated actions.</p>
+        {event.approvalPlan.plan.jobs.map((job, i) => <p key={'job-' + i}>Truck {job.truck} → {job.facilityId} · leave +{job.dispatchMin} min · {job.trips} trip(s)</p>)}
+        {event.approvalPlan.plan.shutIns.map((stop, i) => <p key={'well-' + i}>{stop.wellId} · shut in +{stop.startMin} min through repair</p>)}
+        {!event.approvalPlan.plan.jobs.length && !event.approvalPlan.plan.shutIns.length && <p>No simulated truck or selective well actions.</p>}
+      </details>}
+    </li>)}</ol>
   </details>
 }
 
@@ -138,20 +145,23 @@ function Enrollment({ incident }: { incident: WorkflowCase }) {
   </section>
 }
 
-export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft }: {
+export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft, approvalPlan, onDiscardPlan }: {
   incident: WorkflowCase; entry?: WorkflowEntry; available: boolean | null; editable: boolean; onUpdate: (change: WorkflowUpdate) => Promise<void>
   person?: Person | null; configured?: boolean; onSignIn: (code: string) => Promise<void>; onSignOut: () => Promise<void>
-  response?: string; draft?: string
+  response?: string; draft?: string; approvalPlan?: ApprovalPlan; onDiscardPlan?: () => void
 }) {
   const delivery = entry?.assignment?.delivery
-  return <details className="inspector-fold workflow-fold">
+  return <details className="inspector-fold workflow-fold" open={approvalPlan ? true : undefined}>
     <summary><ClipboardList size={15} /> Send to Field <span className="tag">{stageLabel[entry?.stage ?? 'detected']}</span></summary>
     <div className="inspector-section">
       {!entry?.assignment && <p>Review and confirm the incident, choose a clocked-in engineer, then send the approved instructions. Detection and confirmation alone never send a phone alert.</p>}
+      {approvalPlan && !entry?.assignment && <section aria-label="Selected plan for approval"><h4>Butterfly plan ready for review</h4>
+        <p>{response}</p><p>Times are measured from {stamp(approvalPlan.at)}. This assignment covers this facility; the saved simulation includes the shared system plan. No physical equipment is controlled.</p>
+        <button className="small-btn" onClick={onDiscardPlan}>Discard selected plan</button></section>}
       {entry?.assignment && <><p><BadgeCheck size={14} /> {entry.assignment.recipient.name}</p>
         {delivery && <p className="delivery-state">{deliveryLabel[delivery.status]}{delivery.failed > 0 ? ' · ' + delivery.failed + ' device request(s) failed' : ''}</p>}</>}
       {person?.role === 'control' ? <>
-        {editable && available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} /> :
+        {editable && available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} approvalPlan={approvalPlan} /> :
           <p>{!editable ? 'Review and assignment are available at the latest recording.' : available === false ? 'Workflow server unavailable.' : 'Connecting to the workflow server…'}</p>}
         {entry ? <Enrollment incident={incident} /> : <p className="field-connection-hint">Connecting your phone? Tap <strong>Begin review</strong> above. The phone connection QR and link will appear here.</p>}
       </> : person ? <p>Sign out of the field account to use control-room tools.</p> : <>

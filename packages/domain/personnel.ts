@@ -1,4 +1,4 @@
-import type { Actor, WorkflowCase } from './workflow.ts'
+import type { Actor, ApprovalPlan, WorkflowCase } from './workflow.ts'
 
 export interface Person {
   id: string
@@ -34,6 +34,7 @@ export interface Assignment {
   assignedAt: number
   briefing: string
   response: string
+  approvalPlan?: ApprovalPlan
   delivery?: DeliveryView
 }
 

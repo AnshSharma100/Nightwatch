@@ -10,6 +10,8 @@ import { Inspector } from './Inspector.tsx'
 import { IncidentWorkflow, SignIn } from './IncidentWorkflow.tsx'
 import { useWorkflow } from './useWorkflow.ts'
 import { caseFromAlert, caseKey } from '../../packages/domain/workflow.ts'
+import type { ApprovalPlan } from '../../packages/domain/workflow.ts'
+import { fieldResponse } from '../../packages/domain/field-response.ts'
 import { OperationsStrip } from './OperationsStrip.tsx'
 import { SpatialView } from './SpatialView.tsx'
 import type { Scope } from './NetworkMap.tsx'
@@ -73,6 +75,7 @@ export function App() {
   const [demo, setDemo] = useState<Demo | null>(null)
   const workflow = useWorkflow()
   const [fieldDraft, setFieldDraft] = useState<{ key: string; text: string } | null>(null)
+  const [approval, setApproval] = useState<{ key: string; selection: ApprovalPlan; response: string } | null>(null)
   const cases = useMemo(() => new Map(workflow.entries.map((entry) => [caseKey(entry.incident), entry])), [workflow.entries])
   const request = useRef(0)
   const input = useRef<HTMLInputElement>(null)
@@ -135,6 +138,8 @@ export function App() {
       alert.repairMinutes !== null && alert.minutesToLimit < alert.repairMinutes) ?? verified[0]
     labRequest.current?.abort()
     setData(dataset)
+    setApproval(null)
+    setFieldDraft(null)
     setSnapshot(latest)
     setCalculation(null)
     setIncidents(events)
@@ -399,7 +404,18 @@ export function App() {
   ]
   if (labRoute !== null) {
     if (lab?.route === labRoute) return <DecisionLab key={labRoute} comparison={lab.comparison} demo={lab.demo} data={lab.data}
-      alerts={lab.alerts} theme={theme} onClose={closeLab} />
+      alerts={lab.alerts} theme={theme} onClose={closeLab} onApprove={(outcome, facilityId) => {
+        const alert = lab.alerts.find((item) => item.category === 'pump_failure' && item.facilityId === facilityId)
+        if (!alert) return
+        const { scenario } = lab.comparison
+        setApproval({ key: caseKey(caseFromAlert(lab.data, alert, scenario.at)),
+          selection: { network: lab.data.networkKey, at: scenario.at, systemId: scenario.system.id, plan: outcome.plan },
+          response: 'Selected Butterfly plan. ' + fieldResponse(alert, lab.data.facilities.get(facilityId)!, outcome) })
+        setSelected(alert.assetId)
+        setInspectorOpen(true)
+        setPlaying(false)
+        closeLab()
+      }} />
     return <main className="lab-route-state"><section className="panel welcome"><h1>Decision Lab</h1>
       {labError ? <p role="alert">{labError}</p> : <p role="status">Loading the recorded decision point…</p>}
       <button className="soft-btn" onClick={closeLab}>Back to Operations</button></section></main>
@@ -478,6 +494,7 @@ export function App() {
           {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={closeInspector} onRequestAccess={requestAccess} onBriefing={(alert, text) => setFieldDraft({ key: caseKey(caseFromAlert(data, alert, at)), text })} workflow={(alert, response) => {
             const incident = caseFromAlert(data, alert, at)
             const key = caseKey(incident)
+            const chosen = approval?.key === key && approval.selection.at === at && approval.selection.network === data.networkKey ? approval : null
             return <IncidentWorkflow key={key} incident={incident} entry={cases.get(key)} available={workflow.available} editable={editable} onUpdate={async (change) => {
                 const signal = AbortSignal.timeout(30_000)
                 const submit = async (refresh = false) => workflow.update({
@@ -489,7 +506,7 @@ export function App() {
                 }
               }}
               person={workflow.person} configured={workflow.configured} onSignIn={workflow.signIn} onSignOut={workflow.signOut}
-              response={response} draft={fieldDraft?.key === key ? fieldDraft.text : undefined} />
+              response={chosen?.response ?? response} approvalPlan={chosen?.selection} onDiscardPlan={() => setApproval(null)} draft={fieldDraft?.key === key ? fieldDraft.text : undefined} />
           }} />}
         </div>
         <section className={'operator-timeline' + (timelineOpen ? ' timeline-open' : '')} aria-label="Historical playback">

@@ -6,9 +6,7 @@ import { personFor, withinScope } from '../packages/domain/personnel.ts'
 import type { Person } from '../packages/domain/personnel.ts'
 import { requestBody, send } from './http.ts'
 import { activeAlerts } from '../packages/domain/incidents.ts'
-import { fieldResponse } from '../packages/domain/field-response.ts'
-import { scenarioAt } from '../packages/domain/simulate.ts'
-import { optimize } from '../packages/domain/optimize.ts'
+import { prepareApproval } from './approval.ts'
 import type { RecordingRegistry } from './datasets.ts'
 import type { SessionAuth } from './auth.ts'
 import type { PushService } from './push.ts'
@@ -40,7 +38,8 @@ export function applyChange(state: State, person: Person, update: WorkflowUpdate
   const recipientId = allocating ? update.recipientId ?? (fallbackRole ? personFor(update.incident, fallbackRole).id : undefined) : undefined
   const recorded = current?.history[update.revision]
   if (current && recorded?.person?.id === person.id && recorded.action === update.action &&
-      recorded.note === update.note.trim() && recorded.recipient?.id === recipientId) {
+      recorded.note === update.note.trim() && recorded.recipient?.id === recipientId &&
+      JSON.stringify(recorded.approvalPlan) === JSON.stringify(update.approvalPlan)) {
     return { status: 200, entry: visible(current, state) }
   }
   if (current && update.action === 'acknowledge' && current.assignment?.recipient.id === person.id &&
@@ -62,12 +61,14 @@ export function applyChange(state: State, person: Person, update: WorkflowUpdate
   const event = entry.history.at(-1)!
   event.person = person
   event.recipient = recipient
+  if (update.action === 'assign') event.approvalPlan = update.approvalPlan
   let deliveryId: string | undefined
   if (recipient) {
     if (update.action === 'assign') entry.incident = update.incident
     entry.assignment = {
       id: current?.assignment?.id ?? randomUUID(), recipient, assignedAt: now,
       briefing: update.note.trim() || current?.assignment?.briefing || '',
+      approvalPlan: update.action === 'assign' ? update.approvalPlan : current?.assignment?.approvalPlan,
       response: update.response?.trim() || current?.assignment?.response ||
         (update.incident.category === 'pump_failure' ? 'Inspect the failed pump and coordinate the simulated response with control.' : 'Perform a field inspection and report findings.'),
     }
@@ -119,13 +120,12 @@ export function workflowHandler(store: WorkspaceStore, auth: SessionAuth, push: 
       }
       input.incident = caseFromAlert(data, alert, data.now)
       if (input.action === 'assign') {
-        const failures = alerts.filter((item) => item.category === 'pump_failure' && item.systemId === alert.systemId)
-        const canCompare = failures.every((item) => item.levelPct !== undefined)
-        const outcome = alert.category === 'pump_failure' && canCompare ? optimize(scenarioAt(data, failures, alert.systemId, data.now)).best : undefined
-        input.response = fieldResponse(alert, data.facilities.get(alert.facilityId)!, outcome)
+        try { Object.assign(input, prepareApproval(data, alerts, alert, input.approvalPlan)) }
+        catch (error) { send(response, 422, { error: (error as Error).message }); return }
       }
     } else {
       delete input.response
+      delete input.approvalPlan
     }
     const result = await store.update((state) => {
       const now = Date.now()

@@ -2,6 +2,10 @@ import type { Category, Alert } from './incidents.ts'
 import { read } from './model.ts'
 import type { Dataset } from './model.ts'
 import type { Assignment, Person } from './personnel.ts'
+import type { Plan } from './simulate.ts'
+import { isPlan } from '../contracts/operations.ts'
+
+export interface ApprovalPlan { network: string; at: number; systemId: string; plan: Plan }
 
 export type Actor = 'control' | 'foreman' | 'lease'
 export type Stage = 'detected' | 'under_review' | 'monitoring' | 'dismissed' | 'confirmed' | 'assigned' | 'acknowledged' | 'in_progress' | 'resolved'
@@ -22,7 +26,7 @@ export interface WorkflowCase {
   automatic?: boolean
 }
 
-export interface WorkflowEvent { action: Action; actor: Actor; at: number; note: string; person?: Person; recipient?: Person }
+export interface WorkflowEvent { action: Action; actor: Actor; at: number; note: string; person?: Person; recipient?: Person; approvalPlan?: ApprovalPlan }
 export interface WorkflowEntry {
   incident: WorkflowCase
   stage: Stage
@@ -38,6 +42,7 @@ export interface WorkflowUpdate {
   recipientRole?: 'foreman' | 'lease'
   recipientId?: string
   response?: string
+  approvalPlan?: ApprovalPlan
   recordingId?: string
   note: string
 }
@@ -130,6 +135,8 @@ export function isWorkflowUpdate(value: unknown): value is WorkflowUpdate {
     (row.recipientId === undefined || (typeof row.recipientId === 'string' && row.recipientId.length > 0 && row.recipientId.length <= 2048)) &&
     (row.recordingId === undefined || (typeof row.recordingId === 'string' && row.recordingId.length <= 64)) &&
     (row.response === undefined || (typeof row.response === 'string' && row.response.length <= 1000)) &&
+    (row.approvalPlan === undefined || (row.approvalPlan !== null && typeof row.approvalPlan === 'object' && row.action === 'assign' && id(row.approvalPlan.network) &&
+      id(row.approvalPlan.systemId) && Number.isSafeInteger(row.approvalPlan.at) && isPlan(row.approvalPlan.plan))) &&
     Array.isArray(incident.evidence) && incident.evidence.length <= 8 && incident.evidence.every(id) &&
     ['control', 'foreman', 'lease'].includes(row.actor ?? '') && typeof row.action === 'string' && Object.hasOwn(destination, row.action) &&
     Number.isSafeInteger(row.revision) && (row.revision ?? -1) >= 0 && typeof row.note === 'string' && row.note.length <= 500)

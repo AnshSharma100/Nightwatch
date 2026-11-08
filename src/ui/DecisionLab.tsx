@@ -18,9 +18,10 @@ import './lab.css'
 type BranchKey = 'baseline' | 'operator' | 'recommended'
 interface Branch { key: BranchKey; label: string; color: string; outcome: Outcome | null }
 
-export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: {
+export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, onApprove }: {
   comparison: PlanComparison; demo: boolean; data: Dataset; alerts: Alert[]
   theme: ReturnType<typeof useTheme>; onClose: () => void
+  onApprove: (outcome: Outcome, facilityId: string) => void
 }) {
   const { scenario, search } = comparison
   const heading = useRef<HTMLHeadingElement>(null)
@@ -40,9 +41,9 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
   const [focusRequest, setFocusRequest] = useState(0)
   const max = search.baseline.duration
   const branches: Branch[] = [
-    { key: 'baseline', label: 'No action', color: 'var(--quiet)', outcome: search.baseline },
-    { key: 'operator', label: 'Operator plan', color: 'var(--amber)', outcome: manual },
-    { key: 'recommended', label: 'Recommended', color: 'var(--teal)', outcome: search.best },
+    { key: 'baseline', label: 'No action', color: 'var(--plan-none)', outcome: search.baseline },
+    { key: 'operator', label: 'Operator plan', color: 'var(--plan-operator)', outcome: manual },
+    { key: 'recommended', label: 'Recommended', color: 'var(--plan-recommended)', outcome: search.best },
   ]
   const branch = branches.find(({ key }) => key === selectedBranch)!
   const projected = useMemo(() => branch.outcome ? projectNetwork(scenario, branch.outcome, minute) : undefined, [scenario, branch.outcome, minute])
@@ -136,7 +137,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
     <div className="lab-studio">
       <aside className="lab-plans" aria-label="Response plans" onPointerDownCapture={() => setPlaying(false)} onFocusCapture={() => setPlaying(false)}>
         <div className="lab-pane-head"><h2>Response plans</h2><span>3 futures</span></div>
-        <p className="lab-guide">Choose a future to inspect. Edit your truck and well actions, then run the simulation to compare costs. <strong>Playback waits for you.</strong></p>
+        <p className="lab-guide">One decision changes the options elsewhere. A truck committed here cannot help another tank until it returns. <strong>Playback waits for you.</strong></p>
         <div className="branch-list" role="group" aria-label="Preview a plan">
           {branches.map(({ key, label, color, outcome }) => <button key={key} className={'branch-choice ' + key} type="button"
             style={{ '--branch-color': color } as React.CSSProperties} aria-pressed={selectedBranch === key} onClick={() => selectBranch(key)}>
@@ -145,6 +146,12 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
             <b>{outcome ? money(outcome.costs.total) : '—'}</b>
           </button>)}
         </div>
+        <details className="lab-rules"><summary>How this simulation works</summary>
+          <p><strong>Run simulation</strong> calculates a future. <strong>Play</strong> animates that result; it never sends an assignment.</p>
+          <p>Trucks remove produced water and buy time. They do not repair pumps. Repairs occur on the dataset’s modeled schedule, measured from failure onset.</p>
+          <p>When the tank reaches its shutdown threshold, all facility wells stop automatically until modeled repair. A late truck cannot restart those wells. Selective well stops also last through repair.</p>
+          <p>Times beginning with + are measured from this decision. “Available again at” is the truck’s return time, not a free-time allowance. Field completion records work; it does not change sensor history.</p>
+        </details>
         <details className="plan-editor" open={editorOpen} onToggle={(event) => setEditorOpen(event.currentTarget.open)}>
           <summary>Edit operator plan</summary>
           <div className="plan-editor-body">
@@ -156,6 +163,15 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
               {dirty && <small>Changes need a new simulation</small>}</div>
           </div>
         </details>
+        <div className="plan-approval">
+          <label>Review assignment for<select aria-label="Plan approval facility" value={site} onChange={(event) => setSite(event.target.value)}>
+            {scenario.failures.map(({ facility }) => <option key={facility.id}>{facility.id}</option>)}
+          </select></label>
+          <p>{branch.label} · {branch.outcome ? money(branch.outcome.costs.total) : 'Not calculated'} across this system.</p>
+          <button className="primary-btn" disabled={!branch.outcome || running || (selectedBranch === 'operator' && dirty) || demo || scenario.at !== data.now}
+            onClick={() => { if (branch.outcome) onApprove(branch.outcome, site) }}>Use this plan for approval</button>
+          <p>{demo || scenario.at !== data.now ? 'Historical exploration only. Open the latest recording to approve field work.' : 'Returns to Operations for incident confirmation, recipient selection and editable instructions. Nothing is sent yet.'}</p>
+        </div>
       </aside>
       <section className="lab-stage" aria-label="Simulated network">
         <div className="lab-pane-head"><div><span className="eyebrow">SIMULATED NETWORK</span><h2>{branch.label}</h2></div>
@@ -177,13 +193,17 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
           {savings !== null && <p className="lab-savings">{savings > .005 ? money(savings) + ' less than the operator plan' :
             savings < -.005 ? 'Operator plan costs ' + money(-savings) + ' less' : 'Operator and recommended plans tie'}</p>}
           <CostTable branches={branches} />
+          <ConsequenceReview scenario={scenario} outcome={branch.outcome} label={branch.label}
+            reference={selectedBranch === 'recommended' ? search.baseline : search.best}
+            referenceLabel={selectedBranch === 'recommended' ? 'No action' : 'Recommended'}
+            onJump={(at) => { setPlaying(false); setMinute(Math.min(max, at)) }} />
           <label className="lab-site-select">Facility evidence<select value={site} onChange={(event) => setSite(event.target.value)}>
             {scenario.failures.map(({ facility }) => <option key={facility.id} value={facility.id}>{facility.id}</option>)}
           </select></label>
           <FacilityComparison key={site} scenario={scenario} site={site} branches={branches} minute={minute} max={max} />
           <details className="method" open><summary>Recommended actions</summary>
             {search.best.jobs.map((job) => <p key={job.truck + ':' + job.dispatchMin}><strong>Truck {job.truck} → {job.facilityId}</strong><br />
-              Dispatch +{duration(job.dispatchMin)} · Arrive {job.arrivals.map((arrival) => '+' + duration(arrival)).join(', ')} · Free +{duration(job.freeMin)}</p>)}
+              Leave at +{duration(job.dispatchMin)} · Collect water at {job.arrivals.map((arrival) => '+' + duration(arrival)).join(', ')} · Available again at +{duration(job.freeMin)}</p>)}
             {search.best.plan.shutIns.map((stop) => <p key={stop.wellId}>Shut in {stop.wellId} at +{duration(stop.startMin)} through repair.</p>)}
             {!search.best.jobs.length && !search.best.plan.shutIns.length && <p>Monitor and wait for repair.</p>}
           </details>
@@ -255,6 +275,35 @@ function PlanEditor({ scenario, draft, edit, running }: { scenario: Scenario; dr
   </fieldset>
 }
 
+function ConsequenceReview({ scenario, outcome, reference, label, referenceLabel, onJump }: {
+  scenario: Scenario; outcome: Outcome | null; reference: Outcome; label: string; referenceLabel: string; onJump: (at: number) => void
+}) {
+  if (!outcome) return <section className="consequence-review"><h3>See the ripple effect</h3><p>Add truck jobs or well shut-ins, then run your plan to see which facilities gain or lose time.</p></section>
+  const difference = outcome.costs.total - reference.costs.total
+  return <section className="consequence-review" aria-label="Decision consequences"><h3>{label} compared with {referenceLabel}</h3>
+    <p><strong>{Math.abs(difference) < .005 ? 'Same estimated total cost' : money(Math.abs(difference)) + (difference > 0 ? ' more' : ' less')}</strong> over the same modeled repair horizon.</p>
+    <details><summary>Decision → consequences · {outcome.facilities.filter((site) => site.autoAt !== null).length} automatic shut-ins</summary>
+      {scenario.failures.map(({ facility, repairMin }) => {
+        const result = outcome.facilities.find((item) => item.facilityId === facility.id)!
+        const other = reference.facilities.find((item) => item.facilityId === facility.id)!
+        const jobs = outcome.jobs.filter((job) => job.facilityId === facility.id)
+        const stops = outcome.plan.shutIns.filter((stop) => facility.wells.some((well) => well.id === stop.wellId))
+        const competing = result.autoAt === null ? [] : outcome.jobs.filter((job) => job.facilityId !== facility.id && job.dispatchMin <= result.autoAt! && job.freeMin > result.autoAt!)
+        const changed = result.autoAt !== other.autoAt
+        return <article key={facility.id} className={changed ? 'consequence-changed' : ''}>
+          <strong>{facility.id}{changed ? ' · different outcome' : ''}</strong>
+          <p>{jobs.length ? jobs.map((job) => 'Truck ' + job.truck + ' collects water at ' + job.arrivals.map((at) => '+' + duration(at)).join(', ') + '; unavailable elsewhere until +' + duration(job.freeMin)).join('. ') : 'No truck visits this facility.'}</p>
+          {stops.length > 0 && <p>Reduce inflow: {stops.map((stop) => stop.wellId + ' off at +' + duration(stop.startMin)).join('; ')}.</p>}
+          <p>{result.autoAt === null ? 'Tank stays below the automatic shut-in threshold through repair.' : (result.autoAt === 0 ? 'Wells are already automatically shut in at this decision.' : 'Tank reaches the threshold at +' + duration(result.autoAt) + '; all facility wells stop.') + ' Modeled repair is at +' + duration(repairMin) + '; late trucks cannot restart wells before then.'}</p>
+          {competing.length > 0 && <p>At that moment, {new Set(competing.map((job) => job.truck)).size} of {scenario.system.fleetSize} trucks are committed elsewhere: {competing.map((job) => 'truck ' + job.truck + ' at ' + job.facilityId).join(', ')}. This reports fleet availability, not proof that a different allocation could save every site.</p>}
+          <p>Lost production: {money(result.costs.oil + result.costs.gas)}; trucking: {money(result.costs.trucking)}. {referenceLabel}: {other.autoAt === null ? 'no automatic shut-in' : 'automatic shut-in at +' + duration(other.autoAt)}.</p>
+          <button className="small-btn" onClick={() => onJump(result.autoAt ?? jobs[0]?.arrivals[0] ?? repairMin)}>Show this moment · +{duration(result.autoAt ?? jobs[0]?.arrivals[0] ?? repairMin)}</button>
+        </article>
+      })}
+    </details>
+  </section>
+}
+
 function CostTable({ branches }: { branches: Branch[] }) {
   const rows = [
     { label: 'Oil lost', value: (outcome: Outcome) => money(outcome.costs.oil) },
@@ -263,7 +312,7 @@ function CostTable({ branches }: { branches: Branch[] }) {
     { label: 'Auto shut-ins', value: (outcome: Outcome) => outcome.facilities.filter((facility) => facility.autoAt !== null).length },
   ]
   return <table className="lab-cost-table">
-    <thead><tr><th scope="col">USD</th><th scope="col">None</th><th scope="col">Operator</th><th scope="col">Best found</th></tr></thead>
+    <thead><tr><th scope="col">Impact</th><th className="plan-none" scope="col">No action</th><th className="plan-operator" scope="col">Operator</th><th className="plan-recommended" scope="col">Recommended</th></tr></thead>
     <tbody>{rows.map(({ label, value }) => <tr key={label}><th scope="row">{label}</th>{branches.map(({ key, outcome }) =>
       <td key={key}>{outcome ? value(outcome) : '—'}</td>)}</tr>)}</tbody>
   </table>
@@ -272,14 +321,18 @@ function CostTable({ branches }: { branches: Branch[] }) {
 function FacilityComparison({ scenario, site, branches, minute, max }: { scenario: Scenario; site: string; branches: Branch[]; minute: number; max: number }) {
   const failure = scenario.failures.find(({ facility }) => facility.id === site)!
   const { facility, limitBbl } = failure
-  const samples = branches.flatMap(({ outcome, label, color }) => {
+  const samples = branches.flatMap(({ key, outcome, label, color }) => {
     const result = outcome?.facilities.find(({ facilityId }) => facilityId === site)
     if (!result) return []
-    return [{ result, label, color, points: result.frames.map((frame) => ({ at: frame.minute, value: frame.bbl / facility.tank.capacityBbl * 100 })) }]
+    return [{ result, label, color, dash: key === 'baseline' ? '9 5' : key === 'operator' ? '3 4' : undefined, points: result.frames.map((frame) => ({ at: frame.minute, value: frame.bbl / facility.tank.capacityBbl * 100 })) }]
   })
   return <section className="future-card">
     <Trace xStart={0} xEnd={max} min={0} max={100} cursor={minute} threshold={limitBbl / facility.tank.capacityBbl * 100}
-      timeLabel={(time) => '+' + duration(time)} label={'Simulated tank fill at ' + site} lines={samples} />
+      timeLabel={(time) => '+' + duration(time)} label={'Simulated tank fill at ' + site} lines={samples}
+      xLabel="Time after decision (hours and minutes)" yLabel="Tank fill (% of capacity)"
+      thresholdLabel={'Automatic shut-in at ' + number(limitBbl / facility.tank.capacityBbl * 100) + '% · not tank capacity'} />
+    <p className="chart-explanation">Each line is a different future for this tank. A vertical drop means water collected by a truck. Lines overlap while plans have the same effect.</p>
+    <p className="chart-explanation">Fill and producing wells are at the playhead. Costs and shut-in times cover the full repair horizon.</p>
     <div className="future-states">{samples.map(({ result, label, color }) => {
       const frame = frameAt(result.frames, minute)!
       return <div key={label}><span style={{ color }}>{label}</span><strong>{number(frame.bbl / facility.tank.capacityBbl * 100)}% · {frame.producing}/{facility.wells.length} wells</strong>

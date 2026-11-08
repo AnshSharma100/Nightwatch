@@ -126,6 +126,24 @@ test('dispatches to a clocked-in device, opens the assignment link, and syncs pr
   await expect(page.getByText('No active incidents in S2 · 3 elsewhere')).toBeVisible()
   await page.getByRole('button', { name: 'Go to priority' }).click()
 
+  await page.getByRole('button', { name: 'Compare response plans' }).click()
+  const lab = page.getByRole('main', { name: 'Decision Lab' })
+  await lab.getByRole('button', { name: 'Add job' }).click()
+  await lab.getByRole('button', { name: 'Add job' }).click()
+  await lab.getByRole('button', { name: 'Run simulation' }).click()
+  await expect(lab.locator('.branch-choice.operator')).toHaveAttribute('aria-pressed', 'true')
+  await expect(lab.getByRole('region', { name: 'Decision consequences' })).toContainText('different outcome')
+  await expect(lab.getByText('Tank fill (% of capacity)', { exact: true })).toBeVisible()
+  await expect(lab.locator('.future-card .trace polyline[stroke-dasharray]')).toHaveCount(2)
+  if (process.env.NIGHTWATCH_SCREENSHOT_DIR) await page.screenshot({ path: process.env.NIGHTWATCH_SCREENSHOT_DIR + '/butterfly-comparison.png' })
+  await lab.locator('.consequence-review > details > summary').click()
+  await lab.getByText('How this simulation works', { exact: true }).click()
+  await expect(lab.getByText(/A late truck cannot restart those wells/)).toBeVisible()
+  if (process.env.NIGHTWATCH_SCREENSHOT_DIR) await page.screenshot({ path: process.env.NIGHTWATCH_SCREENSHOT_DIR + '/butterfly-consequences.png' })
+  await lab.getByRole('button', { name: 'Use this plan for approval' }).click()
+  await expect(page.getByRole('region', { name: 'Selected plan for approval' })).toBeVisible()
+  await expect(page.getByRole('region', { name: 'Selected plan for approval' })).toContainText('Truck 2')
+
   const workflow = page.locator('.workflow-fold')
   await page.getByRole('region', { name: 'Operator actions' }).getByRole('button', { name: '3 · Send to Field' }).click()
   await expect(workflow).toHaveAttribute('open', '')
@@ -197,6 +215,13 @@ test('dispatches to a clocked-in device, opens the assignment link, and syncs pr
   await expect(link).toBeVisible()
   const assignment = (await link.getAttribute('href'))!
   const assignmentApi = '/api/workflow/assignments/' + assignment.split('/').at(-1)
+  const saved = await (await lease.field.request.get(assignmentApi)).json()
+  expect(saved.assignment.approvalPlan.plan.jobs).toEqual([
+    { facilityId: 'S4_FACILITY_A', truck: 1, dispatchMin: 0, trips: 1 },
+    { facilityId: 'S4_FACILITY_A', truck: 2, dispatchMin: 0, trips: 1 },
+  ])
+  expect(saved.assignment.response).toContain('Selected Butterfly plan')
+  expect(saved.assignment.response).toContain('Truck 2')
   expect((await foreman.field.request.get(assignmentApi)).status()).toBe(404)
   await link.click()
   await expect(lease.field.locator('.field-instructions').getByText('Inspect this recorded fault.', { exact: true })).toBeVisible()
