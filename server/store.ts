@@ -6,17 +6,19 @@ import { caseKey } from '../packages/domain/workflow.ts'
 import type { PushSubscription } from 'web-push'
 import type { DeliveryView, Person } from '../packages/domain/personnel.ts'
 import type { WorkflowEntry } from '../packages/domain/workflow.ts'
+import type { ShiftRecord } from './shifts.ts'
 
 export interface Session { digest: string; person: Person; expires: number }
 export interface Invite { digest: string; person: Person; expires: number }
 export interface Subscription { session: string; personId: string; value: PushSubscription }
-export interface Delivery extends DeliveryView { id: string; assignmentId: string; recipientId: string }
+export interface Delivery extends DeliveryView { id: string; assignmentId: string; recipientId: string; requiresAvailable?: boolean }
 export interface State {
   entries: WorkflowEntry[]
   sessions: Session[]
   invites: Invite[]
   subscriptions: Subscription[]
   deliveries: Delivery[]
+  shifts: ShiftRecord[]
 }
 
 function migrate(entry: WorkflowEntry): WorkflowEntry {
@@ -36,8 +38,8 @@ export function workspaceStore(path: string) {
   const file = resolve(path)
   function read(): State {
     const parsed = existsSync(file) ? JSON.parse(readFileSync(file, 'utf8')) : []
-    if (Array.isArray(parsed)) return { entries: parsed.map(migrate), sessions: [], invites: [], subscriptions: [], deliveries: [] }
-    return parsed as State
+    if (Array.isArray(parsed)) return { entries: parsed.map(migrate), sessions: [], invites: [], subscriptions: [], deliveries: [], shifts: [] }
+    return { shifts: [], ...parsed } as State
   }
   function update<T>(apply: (state: State) => T): T {
     const state = read()

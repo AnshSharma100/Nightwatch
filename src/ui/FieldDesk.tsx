@@ -6,6 +6,7 @@ import { SignIn, WorkflowActions, WorkflowHistory } from './IncidentWorkflow.tsx
 import { useWorkflow } from './useWorkflow.ts'
 import { duration, stamp, titleFor } from './format.ts'
 import { FieldPush } from './FieldPush.tsx'
+import { FieldShift } from './FieldShift.tsx'
 import './workspace.css'
 import './field.css'
 
@@ -93,11 +94,12 @@ export function FieldDesk({ assignmentId }: { assignmentId?: string }) {
           <p className="field-account">{person.name} <span className="tag">Synthetic demo</span></p>
           {loadError && <p className="form-error" role="alert">{loadError} {assignmentId && <a href={fieldUrl}>My assignments</a>}</p>}
           {assignmentId ? assigned[0] && <AssignmentDetails entry={assigned[0]} workflow={workflow} /> : <>
-            <FieldPush />
+            <FieldShift />
             <h2>My assignments</h2>
             {available === true && !assigned.length && <p className="field-empty">No approved assignments in your scope.</p>}
             {groups.map((group) => group.entries.length > 0 && <section key={group.label} className="field-inbox-group"><h3>{group.label}</h3>
               {group.entries.map((entry) => <AssignmentCard key={entry.assignment!.id} entry={entry} />)}</section>)}
+            <FieldPush />
           </>}
         </>}
     </main>

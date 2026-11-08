@@ -36,6 +36,7 @@ export function sessionAuth(store: WorkspaceStore, controlCode: string | undefin
       if (current) store.update((state) => {
         state.sessions = state.sessions.filter((item) => item.digest !== current.digest)
         state.subscriptions = state.subscriptions.filter((item) => item.session !== current.digest)
+        state.shifts = state.shifts.filter((item) => item.session !== current.digest)
       })
       cookie(request, response, '', 0)
       send(response, 200, { person: null, configured: Boolean(controlCode) })
@@ -64,6 +65,7 @@ export function sessionAuth(store: WorkspaceStore, controlCode: string | undefin
       state.sessions = state.sessions.filter((item) => item.expires > now && item.digest !== replaced?.digest)
       const active = new Set(state.sessions.map((item) => item.digest))
       state.subscriptions = state.subscriptions.filter((item) => active.has(item.session))
+      state.shifts = state.shifts.filter((item) => active.has(item.session))
       state.sessions.push({ digest: digest(value), person, expires: now + sessionLifetime })
     })
     cookie(request, response, value, sessionLifetime / 1000)

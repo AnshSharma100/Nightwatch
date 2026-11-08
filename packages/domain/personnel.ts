@@ -16,7 +16,7 @@ export function personFor(incident: WorkflowCase, role: 'foreman' | 'lease'): Pe
   return {
     id: JSON.stringify(role === 'foreman' ? [role, network, systemId] : [role, network, systemId, facilityId]),
     role, network, systemId, facilityId: role === 'lease' ? facilityId : undefined,
-    name: role === 'foreman' ? 'Demo foreman · ' + systemId : 'Demo lease operator · ' + facilityId,
+    name: role === 'foreman' ? 'System engineer · ' + systemId : 'Facility engineer · ' + facilityId,
   }
 }
 
@@ -25,7 +25,7 @@ export function withinScope(person: Person, incident: WorkflowCase) {
     (person.role === 'foreman' || person.facilityId === incident.facilityId))
 }
 
-export type PushStatus = 'queued' | 'requested' | 'accepted' | 'failed' | 'no_subscription' | 'disabled' | 'superseded'
+export type PushStatus = 'queued' | 'requested' | 'accepted' | 'failed' | 'no_subscription' | 'disabled' | 'superseded' | 'off_shift'
 
 export interface DeliveryView { status: PushStatus; at: number; accepted: number; failed: number }
 export interface Assignment {
@@ -40,5 +40,5 @@ export interface Assignment {
 export const deliveryLabel: Record<PushStatus, string> = {
   queued: 'Push queued', requested: 'Push requested · acceptance unconfirmed', accepted: 'Accepted by push service',
   failed: 'Push failed', no_subscription: 'Inbox only · no subscribed device', disabled: 'Inbox only · push not configured',
-  superseded: 'Push cancelled · assignment changed',
+  superseded: 'Push cancelled · assignment changed', off_shift: 'Inbox only · the engineer went off shift or became busy',
 }

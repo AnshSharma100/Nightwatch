@@ -38,3 +38,14 @@
   .field-invite { overflow-wrap: anywhere; }
   .delivery-state, .assignment-approved { background: #1a3338; border-radius: 4px; padding: 6px; }
 }
+
+
+@layer workspace {
+  .field-shift { margin: 12px 0 20px; padding: 13px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface, #14252c); }
+  .shift-heading, .field-shift > p, .shift-actions { display: flex; align-items: center; gap: 9px; }
+  .shift-heading > svg { color: var(--teal); }
+  .shift-heading span { color: var(--muted); font-size: 11px; letter-spacing: .08em; }
+  .nightwatch-field .shift-heading h2 { margin: 1px 0 0; }
+  .field-shift > p { color: var(--muted); margin: 7px 0; font-size: 14px; }
+  .shift-actions { flex-wrap: wrap; margin-top: 10px; }
+}

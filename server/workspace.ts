@@ -8,6 +8,7 @@ import { workflowHandler } from './workflow.ts'
 import { nemotronHandler } from './nemotron.ts'
 import { operationalRecordings, recordingRegistry } from './datasets.ts'
 import { operationsHandler } from './operations.ts'
+import { shiftHandler } from './shifts.ts'
 
 export function workspaceApi(env: Record<string, string>): Plugin {
   const origin = env.NIGHTWATCH_PUBLIC_ORIGIN?.replace(/\/$/, '') || undefined
@@ -19,6 +20,7 @@ export function workspaceApi(env: Record<string, string>): Plugin {
   const practice = env.NIGHTWATCH_PRACTICE_DIR || 'public/practice'
   const recordings = recordingRegistry(practice)
   const operations = operationsHandler(operationalRecordings(practice, env.NIGHTWATCH_RECORDINGS_DIR || '.nightwatch/recordings', origin?.startsWith('https:') ?? false), recordings, auth, origin)
+  const shifts = shiftHandler(store, auth, origin)
   const workflow = workflowHandler(store, auth, push, recordings, origin)
   const nemotron = nemotronHandler({ apiKey: env.NVIDIA_API_KEY, baseUrl: env.NVIDIA_BASE_URL, model: env.NVIDIA_MODEL, origin }, auth, recordings)
 
@@ -26,6 +28,10 @@ export function workspaceApi(env: Record<string, string>): Plugin {
     const path = request.url?.split('?')[0] ?? ''
     try {
       if (path === '/api/session') { await auth.handle(request, response); return }
+      if (path === '/api/shift' || path.startsWith('/api/shift/')) {
+        await shifts(request, response, new URL(request.url ?? '/', 'http://nightwatch'))
+        return
+      }
       if (path.startsWith('/api/workflow')) { await workflow(request, response, path); return }
       if (path === '/api/field/push') {
         const session = auth.session(request)

@@ -36,6 +36,7 @@ export interface WorkflowUpdate {
   action: Action
   revision: number
   recipientRole?: 'foreman' | 'lease'
+  recipientId?: string
   response?: string
   recordingId?: string
   note: string
@@ -71,7 +72,7 @@ export const stageLabel: Record<Stage, string> = {
 
 export const actionLabel: Record<Action, string> = {
   review: 'Begin review', monitor: 'Keep monitoring', dismiss: 'Dismiss', confirm: 'Confirm incident',
-  assign: 'Approve and notify', acknowledge: 'Acknowledge', start: 'Start work', progress: 'Post progress update', handoff: 'Assign to lease operator', resolve: 'Mark resolved',
+  assign: 'Send to Field', acknowledge: 'Acknowledge', start: 'Start work', progress: 'Post progress update', handoff: 'Assign to lease operator', resolve: 'Mark resolved',
 }
 
 export function assigneeName(actor: Actor, incident: WorkflowCase) {
@@ -126,6 +127,7 @@ export function isWorkflowUpdate(value: unknown): value is WorkflowUpdate {
     [incident.forecastMin, incident.repairMin].every((value) => value == null || (typeof value === 'number' && Number.isFinite(value) && value >= 0)) &&
     (incident.automatic === undefined || typeof incident.automatic === 'boolean') &&
     (row.recipientRole === undefined || row.recipientRole === 'foreman' || row.recipientRole === 'lease') &&
+    (row.recipientId === undefined || (typeof row.recipientId === 'string' && row.recipientId.length > 0 && row.recipientId.length <= 2048)) &&
     (row.recordingId === undefined || (typeof row.recordingId === 'string' && row.recordingId.length <= 64)) &&
     (row.response === undefined || (typeof row.response === 'string' && row.response.length <= 1000)) &&
     Array.isArray(incident.evidence) && incident.evidence.length <= 8 && incident.evidence.every(id) &&

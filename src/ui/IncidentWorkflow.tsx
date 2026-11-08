@@ -5,6 +5,8 @@ import type { Action, Actor, WorkflowCase, WorkflowEntry, WorkflowUpdate } from 
 import { deliveryLabel, personFor } from '../../packages/domain/personnel.ts'
 import type { Person } from '../../packages/domain/personnel.ts'
 import { stamp } from './format.ts'
+import { useRoster } from './useRoster.ts'
+import { shiftLabel } from '../../packages/contracts/shifts.ts'
 import { jsonRequest, workflowJson } from './useWorkflow.ts'
 
 export function SignIn({ label, configured, onSignIn }: { label: string; configured?: boolean; onSignIn: (code: string) => Promise<void> }) {
@@ -30,33 +32,46 @@ export function WorkflowActions({ actor, incident, entry, onUpdate, response, dr
   response?: string; draft?: string
 }) {
   const [note, setNote] = useState('')
-  const [recipientRole, setRecipient] = useState<'foreman' | 'lease'>('foreman')
+  const [recipientId, setRecipient] = useState('')
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
-  const actions = availableActions(entry, actor)
-  if (!actions.length) return null
+  const actions = availableActions(entry, actor).filter((action) => action !== 'handoff')
   const assigning = actions.includes('assign')
   const confirming = actions.includes('confirm')
+  const needsNote = assigning || confirming || actions.includes('progress')
+  const roster = useRoster(assigning ? caseKey(incident) : null)
+  const recipient = roster?.engineers.find(({ person, shift }) => person.id === recipientId && shift.status === 'available')
+  if (!actions.length) return null
 
   async function submit(action: Action) {
     setPending(true)
     setError('')
+    const submitted = note
     try {
-      await onUpdate({ actor, action, incident, revision: entry?.history.length ?? 0, note, recipientRole, response })
-      setNote('')
+      await onUpdate({ actor, action, incident, revision: entry?.history.length ?? 0, note: submitted,
+        recipientId: recipient?.person.id, response })
+      setNote((current) => current === submitted ? '' : current)
     } catch (error) { setError((error as Error).message) }
     finally { setPending(false) }
   }
 
-  return <div className="workflow-actions" key={entry?.stage}>
-    {assigning && <><label>Approved recipient<select value={recipientRole} onChange={(event) => setRecipient(event.target.value as 'foreman' | 'lease')}>
-      <option value="foreman">{personFor(incident, 'foreman').name}</option><option value="lease">{personFor(incident, 'lease').name}</option>
-    </select></label>{response && <p className="assignment-approved">{response}</p>}
-      {draft && <div><button className="small-btn" onClick={() => setNote(draft.slice(0, 500))}>Use AI draft</button></div>}</>}
-    {(actor !== 'control' || assigning || confirming) && <label>{confirming ? 'Reason for confirmation' : assigning ? 'Field instructions' : 'Work note'}
-      <textarea rows={3} maxLength={500} value={note} onChange={(event) => setNote(event.target.value)} /></label>}
+  return <div className="workflow-actions">
+    {assigning && <>
+      <label>Available engineer<select value={recipientId} disabled={pending} onChange={(event) => setRecipient(event.target.value)}>
+        <option value="">Choose an engineer</option>
+        {roster?.engineers.map(({ person, shift }) => <option key={person.id} value={person.id} disabled={shift.status !== 'available'}>
+          {person.name} · {shiftLabel[shift.status]}
+        </option>)}
+      </select></label>
+      {!roster ? <p>Checking the shift roster…</p> : roster.error ? <p className="form-error" role="alert">{roster.error}</p> :
+        !roster.engineers.some(({ shift }) => shift.status === 'available') && <p>No available engineers cover this site. Enroll a device below, then clock in on that device.</p>}
+      {response && <p className="assignment-approved">{response}</p>}
+      {draft && <div><button className="small-btn" disabled={pending} onClick={() => setNote(draft.slice(0, 500))}>Use AI draft</button></div>}
+    </>}
+    {needsNote && <label>{confirming ? 'Reason for confirmation' : assigning ? 'Field instructions' : 'Work note'}
+      <textarea rows={3} maxLength={500} disabled={pending} value={note} onChange={(event) => setNote(event.target.value)} /></label>}
     <div>{actions.map((action, index) => <button key={action} className={index === 0 ? 'primary-btn' : 'small-btn'}
-      disabled={pending || (['resolve', 'progress', 'confirm'].includes(action) && !note.trim())}
+      disabled={pending || (['assign', 'resolve', 'progress', 'confirm'].includes(action) && !note.trim()) || (action === 'assign' && !recipient)}
       onClick={() => void submit(action)}>{actionLabel[action]}</button>)}</div>
     {error && <p role="alert" className="form-error">{error}</p>}
   </div>
@@ -71,7 +86,7 @@ export function WorkflowHistory({ entry }: { entry: WorkflowEntry }) {
 }
 
 function Enrollment({ incident }: { incident: WorkflowCase }) {
-  const [role, setRole] = useState<'foreman' | 'lease'>('foreman')
+  const [role, setRole] = useState<'foreman' | 'lease'>('lease')
   const [invite, setInvite] = useState<{ code: string; person: Person } | null>(null)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)

@@ -3,6 +3,7 @@ import type { PushSubscription } from 'web-push'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Session, WorkspaceStore } from './store.ts'
 import { requestBody, send } from './http.ts'
+import { deviceShift } from './shifts.ts'
 
 export interface PushConfig { publicKey: string; privateKey: string; subject: string }
 export type PushSend = (subscription: PushSubscription, payload: string, config: PushConfig) => Promise<unknown>
@@ -68,10 +69,15 @@ export function pushService(store: WorkspaceStore, config: PushConfig | null, pu
       if (!row || row.status !== 'queued') return
       const entry = state.entries.find((item) => item.assignment?.id === row.assignmentId)
       const current = entry?.assignment?.recipient.id === row.recipientId && entry.stage !== 'resolved'
-      const sessions = new Set(state.sessions.filter((item) => item.expires > Date.now()).map((item) => item.digest))
+      const now = Date.now()
+      const sessions = new Set(state.sessions.filter((item) => item.person.id === row.recipientId && item.expires > now &&
+        (!row.requiresAvailable || deviceShift(state, item.digest, now).status === 'available')).map((item) => item.digest))
       const targets = state.subscriptions.filter((item) => item.personId === row.recipientId && sessions.has(item.session))
-      row.status = !current ? 'superseded' : !config ? 'disabled' : !targets.length ? 'no_subscription' : 'requested'
-      row.at = Date.now()
+      if (!current) row.status = 'superseded'
+      else if (row.requiresAvailable && !sessions.size) row.status = 'off_shift'
+      else if (!config) row.status = 'disabled'
+      else row.status = targets.length ? 'requested' : 'no_subscription'
+      row.at = now
       if (row.status === 'requested') return { targets, assignmentId: row.assignmentId }
     })
     if (!work || !config) return

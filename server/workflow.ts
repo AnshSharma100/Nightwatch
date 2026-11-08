@@ -13,11 +13,12 @@ import type { RecordingRegistry } from './datasets.ts'
 import type { SessionAuth } from './auth.ts'
 import type { PushService } from './push.ts'
 import type { State, WorkspaceStore } from './store.ts'
+import { roster } from './shifts.ts'
 
 export function canRead(person: Person, entry: WorkflowEntry) {
   if (person.role === 'control') return true
   if (!entry.assignment || !withinScope(person, entry.incident)) return false
-  return person.role === 'foreman' || entry.assignment.recipient.id === person.id
+  return entry.assignment.recipient.id === person.id
 }
 
 function visible(entry: WorkflowEntry, state: State) {
@@ -34,20 +35,28 @@ export function applyChange(state: State, person: Person, update: WorkflowUpdate
       (person.role !== 'control' && current?.assignment?.recipient.id !== person.id)) {
     return { status: 403, error: 'This action is outside your assignment permissions.' }
   }
-  const recipientRole = update.action === 'assign' ? update.recipientRole ?? 'foreman' : 'lease'
-  const isAllocation = update.action === 'assign' || update.action === 'handoff'
-  const recipient = isAllocation ? personFor(update.incident, recipientRole) : undefined
+  const allocating = update.action === 'assign' || update.action === 'handoff'
+  const fallbackRole = update.action === 'handoff' ? 'lease' : update.recipientRole
+  const recipientId = allocating ? update.recipientId ?? (fallbackRole ? personFor(update.incident, fallbackRole).id : undefined) : undefined
   const recorded = current?.history[update.revision]
   if (current && recorded?.person?.id === person.id && recorded.action === update.action &&
-      recorded.note === update.note.trim() && recorded.recipient?.id === recipient?.id) {
+      recorded.note === update.note.trim() && recorded.recipient?.id === recipientId) {
     return { status: 200, entry: visible(current, state) }
   }
   if (current && update.action === 'acknowledge' && current.assignment?.recipient.id === person.id &&
       ['acknowledged', 'in_progress', 'resolved'].includes(current.stage)) return { status: 200, entry: visible(current, state) }
 
   if (update.action === 'confirm' && !update.note.trim()) return { status: 400, error: 'Enter a reason for confirming the incident.' }
+  if (update.action === 'assign' && current?.stage !== 'confirmed') return { status: 409, error: 'Confirm the incident before sending it to Field.' }
+  if (update.action === 'assign' && !update.note.trim()) return { status: 400, error: 'Enter field instructions before sending.' }
+  const recipient = allocating ? roster(state, update.incident, now)
+    .find((engineer) => engineer.person.id === recipientId && engineer.shift.status === 'available')?.person : undefined
+  if (allocating && (!recipient || (update.action === 'handoff' && recipient.role !== 'lease'))) {
+    return { status: 409, error: 'Choose an available engineer who covers this incident.' }
+  }
+
   let entry: WorkflowEntry
-  try { entry = transition(current, update, now) }
+  try { entry = transition(current, { ...update, recipientRole: recipient?.role === 'control' ? undefined : recipient?.role }, now) }
   catch (error) { return { status: 409, error: (error as Error).message } }
 
   const event = entry.history.at(-1)!
@@ -64,7 +73,8 @@ export function applyChange(state: State, person: Person, update: WorkflowUpdate
     }
     deliveryId = randomUUID()
     state.deliveries.push({
-      id: deliveryId, assignmentId: entry.assignment.id, recipientId: recipient.id, status: 'queued', at: now, accepted: 0, failed: 0,
+      id: deliveryId, assignmentId: entry.assignment.id, recipientId: recipient.id, status: 'queued', at: now,
+      accepted: 0, failed: 0, requiresAvailable: true,
     })
   }
   if (index < 0) state.entries.push(entry)
@@ -109,8 +119,9 @@ export function workflowHandler(store: WorkspaceStore, auth: SessionAuth, push: 
       }
       input.incident = caseFromAlert(data, alert, data.now)
       if (input.action === 'assign') {
-        const scenario = scenarioAt(data, alerts.filter((item) => item.levelPct !== undefined), alert.systemId, data.now)
-        const outcome = alert.category === 'pump_failure' ? optimize(scenario).best : undefined
+        const failures = alerts.filter((item) => item.category === 'pump_failure' && item.systemId === alert.systemId)
+        const canCompare = failures.every((item) => item.levelPct !== undefined)
+        const outcome = alert.category === 'pump_failure' && canCompare ? optimize(scenarioAt(data, failures, alert.systemId, data.now)).best : undefined
         input.response = fieldResponse(alert, data.facilities.get(alert.facilityId)!, outcome)
       }
     } else {

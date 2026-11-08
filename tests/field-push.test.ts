@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { runInNewContext } from 'node:vm'
 import { applyChange, canRead } from '../server/workflow.ts'
 import { workspaceStore } from '../server/store.ts'
+import { changeShift, deviceShift, roster } from '../server/shifts.ts'
 import { pushService } from '../server/push.ts'
 import { controlPerson, personFor } from '../packages/domain/personnel.ts'
 import type { Person } from '../packages/domain/personnel.ts'
@@ -39,15 +40,22 @@ test('explicit allocation queues one push and only the enrolled recipient receiv
     assert.equal(mutate(controlPerson, 'review', 0).status, 200)
     assert.equal(mutate(controlPerson, 'confirm', 1, 'The recorded fault persisted.').status, 200)
     assert.equal(store.read().deliveries.length, 0)
+    const assign = (recipientId: string) => store.update((state) => applyChange(state, controlPerson, {
+      ...change(controlPerson, 'assign', 2, 'Inspect the fault.'), recipientId,
+    }, Date.now()))
+    assert.equal(assign(foreman.id).status, 409)
     store.update((state) => {
-      for (const [person, id] of [[foreman, 'first'], [foreman, 'expired'], [other, 'other'], [lease, 'lease']] as const) {
-        state.sessions.push({ digest: id, person, expires: Date.now() + 100_000 })
+      for (const [person, id] of [[foreman, 'first'], [foreman, 'expired'], [foreman, 'off'], [other, 'other'], [lease, 'lease']] as const) {
+        const session = { digest: id, person, expires: Date.now() + 100_000 }
+        state.sessions.push(session)
         state.subscriptions.push({ session: id, personId: person.id, value: { endpoint: 'https://fcm.googleapis.com/' + id, keys: { p256dh: '', auth: '' } } })
+        if (id !== 'off') changeShift(state, session, 'available', Date.now())
       }
     })
-    const allocated = mutate(controlPerson, 'assign', 2, 'Inspect the fault.')
+    assert.equal(assign(other.id).status, 409)
+    const allocated = assign(foreman.id)
     assert.ok(allocated.deliveryId)
-    assert.equal(mutate(controlPerson, 'assign', 2, 'Inspect the fault.').deliveryId, undefined)
+    assert.equal(assign(foreman.id).deliveryId, undefined)
     assert.equal(store.read().deliveries.length, 1)
     await push.dispatch(allocated.deliveryId)
     await push.dispatch(allocated.deliveryId)
@@ -57,6 +65,11 @@ test('explicit allocation queues one push and only the enrolled recipient receiv
       { status: 'accepted', accepted: 1, failed: 1 },
     ])
     assert.equal(state.subscriptions.some((item) => item.session === 'expired'), false)
+    store.update((state) => { for (const session of state.sessions.filter((item) => item.person.id === foreman.id)) {
+      changeShift(state, session, 'off', Date.now())
+    } })
+    assert.equal(assign(foreman.id).status, 200)
+    assert.equal(store.read().deliveries.length, 1)
     assert.equal(canRead(other, allocated.entry!), false)
     assert.equal(canRead(lease, allocated.entry!), false)
     assert.equal(mutate(other, 'acknowledge', 3).status, 403)
@@ -116,4 +129,20 @@ test('the installed Web Push library encrypts the payload and signs the provider
   assert.match(String(request.headers.Authorization), /^vapid t=/)
   assert.equal(request.headers['Content-Encoding'], 'aes128gcm')
   assert.equal(request.body?.includes(payload), false)
+})
+
+
+test('availability expires and toggling Busy does not extend the shift', () => {
+  const now = 100000
+  const session = { person: lease, digest: 'field-device', expires: now + 24 * 60 * 60 * 1000 }
+  const state = { entries: [], sessions: [session], invites: [], subscriptions: [], deliveries: [], shifts: [] }
+  assert.equal(changeShift(state, session, 'busy', now), null)
+  const shift = changeShift(state, session, 'available', now)!
+  assert.equal(shift.expiresAt, now + 8 * 60 * 60 * 1000)
+  assert.equal(changeShift(state, session, 'busy', now + 1000)?.expiresAt, shift.expiresAt)
+  assert.equal(roster(state, incident, now + 2000)[0]?.shift.status, 'busy')
+  assert.equal(roster(state, { ...incident, facilityId: 'other' }, now + 2000).length, 0)
+  assert.equal(changeShift(state, session, 'available', now + 3000)?.expiresAt, shift.expiresAt)
+  assert.equal(deviceShift(state, session.digest, shift.expiresAt!).status, 'off')
+  assert.equal(roster(state, incident, shift.expiresAt!).length, 0)
 })
