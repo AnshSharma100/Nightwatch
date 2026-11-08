@@ -105,3 +105,17 @@ test('scopes registered recordings to the operator session and rejects invalid m
   const upstreamError = nvidiaCompletion({}, AbortSignal.timeout(1000), (async () => new Response(null, { status: 429 })) as typeof fetch)
   await assert.rejects(upstreamError([], false), /HTTP 429/)
 })
+
+test('requests a qualitative rewrite instead of publishing unverified numbers', async () => {
+  const snapshot = context()
+  let round = 0
+  const result = await investigate(snapshot, async (messages) => {
+    round++
+    if (round === 1) return { role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'), call('compare_plans')] }
+    if (round === 2) return { role: 'assistant', content: 'It will cost $999999.' }
+    assert.match(messages.at(-1)!.content ?? '', /Rewrite/)
+    return { role: 'assistant', content: 'The comparison shows the projected costs for the simulated plans.' }
+  }, () => {})
+  assert.equal(round, 3)
+  assert.match(result, /projected costs/)
+})

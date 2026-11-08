@@ -158,6 +158,9 @@ export async function investigate(
     },
     { role: 'user', content: question.trim().slice(0, 500) },
   ]
+  const ids = [...context.data.assets.values()].filter((asset) => asset.systemId === context.scenario.system.id &&
+    /\d/.test(asset.id) && /[^\d]/.test(asset.id)).map((asset) => asset.id).sort((a, b) => b.length - a.length)
+  let requestedQualitativeRewrite = false
   const successful = new Set<string>()
   const alternatives = new Map<string, Outcome>()
   for (let round = 0; round < 8; round++) {
@@ -167,7 +170,15 @@ export async function investigate(
       const required = context.scenario.failures.length ? ['get_incidents', 'forecast_shutdown', 'compare_plans'] : ['get_incidents']
       if (required.some((name) => !successful.has(name))) throw new Error('The model did not finish checking incident evidence and the applicable forecast and plan costs.')
       if (!response.content?.trim()) throw new Error('Nemotron returned no investigation summary.')
-      return response.content.trim()
+      const prose = response.content.trim()
+      const withoutAssetIds = ids.reduce((value, id) => value.replaceAll(id, ''), prose)
+      if (/[\d$€£]/.test(withoutAssetIds)) {
+        if (requestedQualitativeRewrite) throw new Error('Nemotron returned numerical claims in prose. The verified measurements and costs are in the tool trace.')
+        requestedQualitativeRewrite = true
+        messages.push(response, { role: 'user', content: 'Rewrite the explanation qualitatively. Keep equipment IDs and leave digits, amounts, and measurements to the verified tool output.' })
+        continue
+      }
+      return prose
     }
     if (calls.length > 6) throw new Error('Nemotron requested too many tools in one turn.')
     messages.push(response)
