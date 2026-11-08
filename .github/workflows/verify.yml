@@ -1,0 +1,67 @@
+name: Verify NIGHTWATCH
+on:
+  push:
+    branches: [operator-workspace, main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18.6-alpine@sha256:123b17998ccaf47e53b502e8c6a1e79afd8f579c6f3eec83c563da026f957395
+        env:
+          POSTGRES_USER: nightwatch_test
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: nightwatch_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U nightwatch_test -d nightwatch_test"
+          --health-interval 5s --health-timeout 4s --health-retries 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24.13.1
+          cache: npm
+      - run: npm ci
+      - name: Prepare the official EOG recordings
+        run: |
+          git init .eog-reference
+          git -C .eog-reference fetch --depth=1 https://github.com/nihaal419/HackUTD-ZeroDay 135ba4c8348357457420a1111df80ec1906bcbdb
+          git -C .eog-reference checkout --detach FETCH_HEAD
+          npm run data -- .eog-reference
+      - run: npm test
+        env:
+          NIGHTWATCH_TEST_DATABASE_URL: postgresql://nightwatch_test:ci-test-only@127.0.0.1:5432/nightwatch_test
+      - run: npm run validate:eog
+      - run: npm run validate:plans
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:browser
+        env:
+          NIGHTWATCH_TEST_SPLIT: "1"
+          NIGHTWATCH_BROWSER: chromium
+          DATABASE_URL: postgresql://nightwatch_test:ci-test-only@127.0.0.1:5432/nightwatch_test
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - run: docker compose config --quiet
+      - run: docker compose up --build --detach --wait --wait-timeout 150
+      - name: Check frontend routes and the PostgreSQL-backed API
+        run: |
+          curl --fail --silent http://127.0.0.1:4180/api/health/ready | grep '"store":"postgres"'
+          curl --fail --silent http://127.0.0.1:4180/api/datasets | grep 'practice-full_week'
+          curl --fail --silent http://127.0.0.1:4180/field | grep '<div id="root">'
+          curl --fail --silent http://127.0.0.1:4180/decision-lab | grep '<div id="root">'
+          docker compose restart frontend api
+          curl --retry 10 --retry-connrefused --retry-delay 2 --fail --silent http://127.0.0.1:4180/api/health/ready | grep '"store":"postgres"'
+      - run: docker compose down --volumes
+        if: always()

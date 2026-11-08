@@ -1,0 +1,15 @@
+services:
+  frontend:
+    profiles: [production]
+    restart: unless-stopped
+  api:
+    environment:
+      NIGHTWATCH_REQUIRE_HTTPS: "1"
+      NIGHTWATCH_REQUIRE_CONTROL_IMPORT: "1"
+      NIGHTWATCH_PUBLIC_ORIGIN: "${NIGHTWATCH_PUBLIC_ORIGIN:?Set the external HTTPS origin}"
+      DATABASE_URL: "postgresql://nightwatch:${NIGHTWATCH_DB_PASSWORD:?Set a new database password}@db:5432/nightwatch"
+    restart: unless-stopped
+  db:
+    environment:
+      POSTGRES_PASSWORD: "${NIGHTWATCH_DB_PASSWORD:?Set a new database password}"
+    restart: unless-stopped
