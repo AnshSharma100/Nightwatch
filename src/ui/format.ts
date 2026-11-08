@@ -3,7 +3,7 @@ import type { Category } from '../engine/incidents.ts'
 export const titleFor: Record<Category, string> = {
   pump_failure: 'Pump failure',
   pipeline_leak: 'Pipeline leak',
-  pump_degradation: 'Pump wear',
+  pump_degradation: 'Pump degradation',
 }
 export const number = (value: number | undefined, digits = 1) => value === undefined ? '—' :
   new Intl.NumberFormat('en-US', { maximumFractionDigits: digits }).format(value)

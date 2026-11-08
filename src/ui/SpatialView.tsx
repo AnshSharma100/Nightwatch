@@ -6,9 +6,10 @@ import type { MapProps } from './NetworkMap.tsx'
 
 const Scene = lazy(() => import('../scene/NetworkScene.tsx'))
 
-class SceneBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
+class SceneBoundary extends Component<{ children: ReactNode; fallback: ReactNode; onFailure: () => void }, { failed: boolean }> {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
+  componentDidCatch() { this.props.onFailure() }
   render() { return this.state.failed ? this.props.fallback : this.props.children }
 }
 
@@ -18,19 +19,20 @@ export function SpatialView({ focusRequest, ...props }: MapProps & { focusReques
     try { return !document.createElement('canvas').getContext('webgl2') }
     catch { return true }
   })
+  const in3d = mode === '3d' && !lost
   const list = <NetworkMap {...props} />
   return <>
-    {mode === 'list' || lost ? list : <SceneBoundary fallback={list}>
+    {in3d ? <SceneBoundary fallback={list} onFailure={() => setLost(true)}>
       <Suspense fallback={<span className="scene-unavailable">Building network geometry…</span>}>
         <Scene {...props} focusRequest={focusRequest} onContextLost={() => setLost(true)} />
       </Suspense>
-    </SceneBoundary>}
-    <div className={'scene-toolbar' + (mode === 'list' || lost ? ' toolbar-list' : '')} aria-label="Map mode">
-      <button className="small-btn" aria-pressed={mode === '3d' && !lost} disabled={lost} onClick={() => setMode('3d')}><Box size={13} /> 3D</button>
-      <button className="small-btn" aria-pressed={mode === 'list' || lost} onClick={() => setMode('list')}><List size={13} /> List</button>
+    </SceneBoundary> : list}
+    <div className={'scene-toolbar' + (!in3d ? ' toolbar-list' : '')}>
+      {lost ? <span className="list-fallback-label"><List size={13} /> List view · WebGL unavailable</span> :
+        <button className="small-btn" onClick={() => setMode(in3d ? 'list' : '3d')}>{in3d ? <List size={13} /> : <Box size={13} />} {in3d ? 'List view' : '3D view'}</button>}
     </div>
-    {mode === '3d' && !lost && <div className="scene-overlay">
-      <span className="scene-schematic"><Compass size={14} /> Schematic layout</span>
+    {in3d && <div className="scene-overlay">
+      <span className="scene-schematic"><Compass size={14} /> Schematic network</span>
       <span className="scene-gestures"><Mouse size={14} /> Drag to orbit · Scroll to zoom</span>
     </div>}
   </>

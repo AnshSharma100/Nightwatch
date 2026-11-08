@@ -7,6 +7,7 @@ export function Trace({ lines, xStart, xEnd, min, max, threshold, cursor, timeLa
   timeLabel: (at: number) => string; label: string
 }) {
   const values = lines.flatMap((line) => line.points.map((point) => point.value))
+  if (threshold !== undefined) values.push(threshold)
   const yMin = min ?? (values.length ? Math.min(...values) : 0)
   const yMax = max ?? Math.max(yMin + 1, ...(values.length ? values : [1]))
   const x = (at: number) => 46 + 516 * (at - xStart) / Math.max(1, xEnd - xStart)

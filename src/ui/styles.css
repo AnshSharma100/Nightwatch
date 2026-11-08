@@ -1,4 +1,4 @@
-@layer base, console, lab, responsive;
+@layer base, console, lab, responsive, workspace;
 
 @layer base {
   :root {
