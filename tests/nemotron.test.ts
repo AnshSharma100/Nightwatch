@@ -51,5 +51,32 @@ test('passes tool errors back to the model and requires an evidence trail', asyn
     assert.match(result.content ?? '', /asset in the current system/)
     return { role: 'assistant', content: 'Unsupported conclusion' }
   }, (entry) => audit.push(entry)), /did not finish checking/)
-  assert.deepEqual(audit, [{ name: 'get_sensor_window', ok: false }])
+  assert.deepEqual(audit.map(({ name, ok }) => ({ name, ok })), [{ name: 'get_sensor_window', ok: false }])
+})
+
+test('uses the same simulator for an operator question about a truck alternative', async () => {
+  const snapshot = context()
+  const audit: AuditEntry[] = []
+  const question = 'What happens if I send both trucks to A?'
+  const job = (truck: number) => ({ truck, facility_id: 'A', dispatch_min: 0, trips: 1 })
+  let round = 0
+  const result = await investigate(snapshot, async (messages) => {
+    assert.equal(messages[1].content, question)
+    round++
+    if (round === 1) return {
+      role: 'assistant', content: null, tool_calls: [call('get_incidents'), call('forecast_shutdown'),
+        call('inspect_fleet'), call('get_equipment', '{"asset_id":"A/pump"}'),
+        call('simulate_alternative', JSON.stringify({ jobs: [job(1), job(2)], shut_ins: [] }))],
+    }
+    if (round === 2) return {
+      role: 'assistant', content: null, tool_calls: [call('compare_plans', '{"alternative_id":"alternative-1"}'),
+        call('optimize_interventions'), call('draft_briefing', '{"audience":"field"}')],
+    }
+    const output = messages.find((message) => message.role === 'tool' && message.tool_call_id === 'compare_plans')
+    assert.ok(output)
+    assert.equal(JSON.parse(output.content!).alternative.costs_usd.trucking, 200)
+    return { role: 'assistant', content: 'The simulator calculated the cost of dedicating the shared fleet to this site.' }
+  }, (entry) => audit.push(entry), question)
+  assert.match(result, /simulator calculated/)
+  assert.ok(audit.every((entry) => entry.ok))
 })
