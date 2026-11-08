@@ -148,8 +148,8 @@ export function activeAlerts(data: Dataset, incidents: readonly Incident[], at: 
       const automatic = failed && levelPct !== undefined && levelPct >= data.shutdownPct - 0.1 &&
         facility.wells.every((well) => read(data, well.id, 'status', at) === 0)
       const water = facility.wells.reduce((sum, well) => sum + well.baselineWaterBpd, 0)
-      const minutesToLimit = !failed || levelPct === undefined || water === 0 ? null :
-        automatic ? 0 : Math.max(0, data.shutdownPct - levelPct) / 100 * facility.tank.capacityBbl / water * 1440
+      const minutesToLimit = !failed || levelPct === undefined ? null :
+        automatic ? 0 : water === 0 ? null : Math.max(0, data.shutdownPct - levelPct) / 100 * facility.tank.capacityBbl / water * 1440
       return {
         ...item, clearedAt: null,
         evidence: evidence(data, item, facility, system, at),

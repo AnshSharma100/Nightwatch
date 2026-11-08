@@ -86,7 +86,8 @@ export function runFacility(
   for (const stop of stops) eventAt(stop.startMin).stop = true
   eventAt(0)
   eventAt(repairMin)
-  if (frames) for (let minute = 5; minute < repairMin; minute += 5) eventAt(minute)
+  const step = Math.max(5, Math.ceil(repairMin / 10_000) * 5)
+  if (frames) for (let minute = step; minute < repairMin; minute += step) eventAt(minute)
   const costs = { oil: 0, gas: 0, trucking: arrivals.length * scenario.tripCost, total: 0 }
   const records: Frame[] = []
   let autoAt = failure.alreadyShut ? 0 : null
@@ -116,6 +117,9 @@ export function runFacility(
         autoAt = previous + run
       }
       bbl = Math.min(limitBbl, bbl + water * run)
+      if (frames && autoAt !== null && autoAt < minute) {
+        records.push({ minute: autoAt, bbl, producing: 0, automatic: true, repaired: false })
+      }
     } else {
       run = 0
     }
@@ -124,6 +128,7 @@ export function runFacility(
     if (event.trips) {
       const removal = scenario.truckBbl * event.trips
       if (removal > bbl + epsilon) return null
+      if (frames && minute > 0) records.push({ minute, bbl, producing: autoAt === null ? producing : 0, automatic: autoAt !== null, repaired: false })
       bbl = Math.max(0, bbl - removal)
     }
     if (event.stop) {

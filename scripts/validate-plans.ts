@@ -18,13 +18,18 @@ const case9 = scenarioAt(full, activeAlerts(full, detectIncidents(full), at), ev
 const baseline = simulate(case9, noAction)
 const well = simulate(case9, { jobs: [], shutIns: [{ wellId: 'S1_WELL_C2', startMin: 125 }] })
 const truck = simulate(case9, { jobs: [{ truck: 1, facilityId: event.facility, dispatchMin: 0, trips: 1 }], shutIns: [] })
+const documented = {
+  ...case9,
+  failures: case9.failures.map((failure) => ({ ...failure, initialBbl: event.level_pct / 100 * failure.facility.tank.capacityBbl })),
+}
+assert.ok(Math.abs(simulate(documented, noAction).costs.total - 5016) <= .01)
 assert.ok(Math.abs(baseline.costs.total - 5016) <= 25)
 assert.ok(Math.abs(well.costs.total - 1958) <= 1)
 assert.equal(truck.costs.total, 905)
 assert.equal(well.facilities[0].autoAt, null)
 assert.equal(truck.facilities[0].autoAt, null)
 assert.equal(optimize(case9).best.costs.total, 905)
-console.log('EVENT_9:', [baseline, well, truck].map((result) => '$' + result.costs.total.toFixed(2)).join(' / '))
+console.log('EVENT_9:', [baseline, well, truck].map((result) => '$' + result.costs.total.toFixed(2)).join(' / '), '· reference 50% fill: $' + simulate(documented, noAction).costs.total.toFixed(2))
 
 for (const [folder, system] of [['snapshot_2026-10-08T1200', 'S2'], ['snapshot_2026-10-10T0900', 'S4']]) {
   const data = load(folder)
