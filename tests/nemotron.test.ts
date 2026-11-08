@@ -80,3 +80,28 @@ test('uses the same simulator for an operator question about a truck alternative
   assert.match(result, /simulator calculated/)
   assert.ok(audit.every((entry) => entry.ok))
 })
+
+test('scopes registered recordings to the operator session and rejects invalid model output', async () => {
+  const { recordingRegistry } = await import('../server/datasets.ts')
+  const { nvidiaCompletion, parseCompletion, prepareInvestigation } = await import('../server/nemotron.ts')
+  const { fixture } = await import('./fixture.ts')
+  const source = fixture()
+  const registry = recordingRegistry()
+  const id = registry.register('session-one', { network: source.network, ops: source.ops, telemetry: source.csv })
+  assert.equal(registry.find(id, 'unrelated-session'), undefined)
+  const recording = registry.find(id, 'session-one')!
+  assert.throws(() => prepareInvestigation(recording, { at: recording.data.now + 10, systemId: 'new/region' }), /recorded timestamp/)
+  assert.throws(() => parseCompletion({ choices: [{ message: { role: 'assistant', tool_calls: [{ type: 'function', function: {} }] } }] }), /invalid tool calls/)
+  const mocked = (async (url, init) => {
+    assert.equal(url, 'https://integrate.api.nvidia.com/v1/chat/completions')
+    assert.equal(init?.redirect, 'error')
+    const payload = JSON.parse(String(init?.body))
+    assert.equal(payload.tool_choice, 'required')
+    assert.ok(payload.tools.some((tool: { function: { name: string } }) => tool.function.name === 'simulate_alternative'))
+    return Response.json({ choices: [{ message: { role: 'assistant', content: null, tool_calls: [call('get_incidents')] } }] })
+  }) as typeof fetch
+  const complete = nvidiaCompletion({ apiKey: 'fixture-token' }, AbortSignal.timeout(1000), mocked)
+  assert.equal((await complete([{ role: 'user', content: 'Inspect this system.' }], true)).tool_calls?.[0].function.name, 'get_incidents')
+  const upstreamError = nvidiaCompletion({}, AbortSignal.timeout(1000), (async () => new Response(null, { status: 429 })) as typeof fetch)
+  await assert.rejects(upstreamError([], false), /HTTP 429/)
+})

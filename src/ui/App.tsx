@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Activity, ArrowRight, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Clock3, Database, PanelRight, Pause, Play, Upload, X } from 'lucide-react'
+import { Activity, ArrowRight, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Clock3, Database, LockKeyhole, PanelRight, Pause, Play, Upload, X } from 'lucide-react'
 import { activeAlerts, detectIncidents } from '../engine/incidents.ts'
 import type { Alert, Incident } from '../engine/incidents.ts'
 import { yardId } from '../engine/model.ts'
@@ -11,13 +11,13 @@ import type { Optimization } from '../engine/optimize.ts'
 import { AlertRail } from './AlertRail.tsx'
 import { DecisionLab } from './DecisionLab.tsx'
 import { Inspector } from './Inspector.tsx'
-import { IncidentWorkflow } from './IncidentWorkflow.tsx'
+import { IncidentWorkflow, SignIn } from './IncidentWorkflow.tsx'
 import { useWorkflow } from './useWorkflow.ts'
 import { caseFromAlert, caseKey } from '../engine/workflow.ts'
 import { OperationsStrip } from './OperationsStrip.tsx'
 import { SpatialView } from './SpatialView.tsx'
 import type { Scope } from './NetworkMap.tsx'
-import { loadPractice, loadUpload, practiceNames } from './datasets.ts'
+import { loadPractice, loadUpload, practiceNames, registerInvestigationDataset } from './datasets.ts'
 import { practiceLabel, stamp } from './format.ts'
 import './workspace.css'
 
@@ -56,6 +56,7 @@ export function App() {
   const [lab, setLab] = useState<{ scenario: Scenario; demo: boolean; alerts: Alert[]; search: Optimization } | null>(null)
   const [demo, setDemo] = useState<Demo | null>(null)
   const workflow = useWorkflow()
+  const [fieldDraft, setFieldDraft] = useState<{ key: string; text: string } | null>(null)
   const cases = useMemo(() => new Map(workflow.entries.map((entry) => [caseKey(entry.incident), entry])), [workflow.entries])
   const request = useRef(0)
   const input = useRef<HTMLInputElement>(null)
@@ -228,7 +229,12 @@ export function App() {
         </select></label>
         {data && <span className="operator-time"><Clock3 size={14} /> <time dateTime={new Date(at * 1000).toISOString()}>{stamp(at)}</time></span>}
       </div>
-      <div className="operator-actions"><a className="field-link" aria-label="Field desk" title="Field desk" href="?view=field"><ClipboardList size={17} /></a>
+      <div className="operator-actions"><a className="field-link" aria-label="Field desk" title="NIGHTWATCH Field" href="/field"><ClipboardList size={17} /></a>
+        <details className="control-account">
+          <summary className="field-link" aria-label="Control-room account" title="Control-room account"><LockKeyhole size={16} /></summary>
+          <div>{workflow.person ? <><p>{workflow.person.name}</p><button className="small-btn" onClick={() => void workflow.signOut().catch((error) => setError(error.message))}>Sign out</button></> :
+            <SignIn label="Control-room code" configured={workflow.configured} onSignIn={workflow.signIn} />}</div>
+        </details>
         <button className="soft-btn import-btn" onClick={() => input.current?.click()}><Upload size={15} /> <span>Import</span></button>
         <button className="primary-btn demo-btn" disabled={!data || Boolean(status)} onClick={() => void startDemo()}><Play size={13} fill="currentColor" /> Start Demo</button>
         <input ref={input} aria-label="Import network.json, ops.json and telemetry.csv" type="file" accept=".json,.csv" multiple hidden onChange={(event) => {
@@ -267,10 +273,21 @@ export function App() {
               {elsewhere && system && <div className="stage-notice"><span>No active incidents in {system.id} · {verified.length} elsewhere</span><button onClick={() => select(elsewhere.assetId)}>Go to priority <ArrowRight size={13} /></button></div>}
             </div>
           </section>
-          {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={() => setInspectorOpen(false)} workflow={(alert) => {
+          {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={() => setInspectorOpen(false)} onBriefing={(alert, text) => setFieldDraft({ key: caseKey(caseFromAlert(data, alert, at)), text })} workflow={(alert, response) => {
             const incident = caseFromAlert(data, alert, at)
             const key = caseKey(incident)
-            return <IncidentWorkflow key={key} incident={incident} entry={cases.get(key)} available={workflow.available} editable={editable} onUpdate={workflow.update} />
+            return <IncidentWorkflow key={key} incident={incident} entry={cases.get(key)} available={workflow.available} editable={editable} onUpdate={async (change) => {
+                const signal = AbortSignal.timeout(30_000)
+                const submit = async (refresh = false) => workflow.update({
+                  ...change, recordingId: await registerInvestigationDataset(data, signal, refresh),
+                })
+                try { await submit() } catch (error) {
+                  if ((error as Error).message !== 'Reload the recorded dataset before changing this incident.') throw error
+                  await submit(true)
+                }
+              }}
+              person={workflow.person} configured={workflow.configured} onSignIn={workflow.signIn} onSignOut={workflow.signOut}
+              response={response} draft={fieldDraft?.key === key ? fieldDraft.text : undefined} />
           }} />}
         </div>
         <section className={'operator-timeline' + (timelineOpen ? ' timeline-open' : '')} aria-label="Historical playback">

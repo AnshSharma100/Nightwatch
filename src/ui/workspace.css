@@ -269,3 +269,10 @@
     .stage-mobile-inspect + .stage-inspector-toggle { display: none; }
   }
 }
+@layer workspace {
+  .control-account { position: relative; }
+  .control-account > summary { cursor: pointer; list-style: none; }
+  .control-account > summary::-webkit-details-marker { display: none; }
+  .control-account > div { position: absolute; top: 34px; right: 0; z-index: 25; width: min(280px, 86vw); padding: 12px; border: 1px solid #3b535c; border-radius: 7px; background: #14272e; font-size: 12px; }
+  .control-account > div > p { margin-bottom: 5px; }
+}

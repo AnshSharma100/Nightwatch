@@ -1,71 +1,116 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import type { Plugin } from 'vite'
 import { defaultModel, tools } from '../src/agent/contracts.ts'
+import type { Completion, Message } from '../src/agent/contracts.ts'
+import { investigate } from '../src/agent/investigate.ts'
+import type { AuditEntry, Investigation } from '../src/agent/investigate.ts'
+import { activeAlerts } from '../src/engine/incidents.ts'
+import { optimize } from '../src/engine/optimize.ts'
+import { scenarioAt, simulate } from '../src/engine/simulate.ts'
+import type { Plan } from '../src/engine/simulate.ts'
+import { requestBody, send } from './http.ts'
+import type { SessionAuth } from './auth.ts'
+import type { RecordingRegistry } from './datasets.ts'
 
-function send(response: ServerResponse, status: number, value: unknown) {
-  response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
-  response.end(JSON.stringify(value))
-}
+interface Configuration { apiKey?: string; baseUrl?: string; model?: string; origin?: string }
 
-async function readBody(request: IncomingMessage) {
-  let body = ''
-  for await (const chunk of request) {
-    body += chunk.toString()
-    if (body.length > 64_000) throw new Error('Investigation request exceeds 64 KB.')
+export function parseCompletion(value: unknown): Completion {
+  const message = (value as { choices?: { message?: Partial<Completion> }[] } | null)?.choices?.[0]?.message
+  if (!message || message.role !== 'assistant' || (message.content != null && typeof message.content !== 'string')) {
+    throw new Error('NVIDIA returned an invalid assistant response.')
   }
-  return JSON.parse(body)
+  const calls = message.tool_calls
+  if (calls !== undefined && (!Array.isArray(calls) || calls.length > 6 || !calls.every((call) =>
+    call?.type === 'function' && typeof call.id === 'string' && call.id.length <= 160 &&
+    typeof call.function?.name === 'string' && call.function.name.length <= 80 &&
+    typeof call.function.arguments === 'string' && call.function.arguments.length <= 20_000
+  ) || new Set(calls.map((call) => call.id)).size !== calls.length)) {
+    throw new Error('NVIDIA returned invalid tool calls.')
+  }
+  return { role: 'assistant', content: message.content ?? null, tool_calls: calls }
 }
 
-export function nemotronBridge(apiKey: string | undefined, model = defaultModel): Plugin {
-  async function handle(request: IncomingMessage, response: ServerResponse, next: () => void) {
-    if (request.url?.split('?')[0] !== '/api/nemotron') { next(); return }
-    if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress ?? '') ||
-        (request.headers.origin && request.headers.origin !== 'http://' + request.headers.host)) {
-      send(response, 403, { error: 'Nemotron is available to the local console only.' })
+export function nvidiaCompletion(config: Configuration, signal: AbortSignal, request = fetch) {
+  const base = new URL(config.baseUrl || 'https://integrate.api.nvidia.com/v1')
+  if (base.protocol !== 'https:' || base.username || base.password || base.search || base.hash) throw new Error('NVIDIA_BASE_URL must be an HTTPS API base URL.')
+  const endpoint = base.href.replace(/\/+$/, '') + '/chat/completions'
+  return async (messages: Message[], first: boolean) => {
+    const reply = await request(endpoint, {
+      method: 'POST', redirect: 'error',
+      headers: { Authorization: 'Bearer ' + config.apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: config.model || defaultModel, messages, tools, tool_choice: first ? 'required' : 'auto',
+        max_tokens: 3500, temperature: .2, stream: false,
+      }),
+      signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+    })
+    if (!reply.ok || reply.status === 202) throw new Error('NVIDIA returned HTTP ' + reply.status + '. Check the configured key and model access.')
+    return parseCompletion(await reply.json())
+  }
+}
+
+export function prepareInvestigation(recording: NonNullable<ReturnType<RecordingRegistry['find']>>, input: Record<string, unknown>): Investigation {
+  const { data, incidents } = recording
+  const { at, systemId, facilityId, manual } = input
+  if (typeof at !== 'number' || !data.times.includes(at) || typeof systemId !== 'string' ||
+      (facilityId !== undefined && (typeof facilityId !== 'string' || data.facilities.get(facilityId)?.systemId !== systemId))) {
+    throw new Error('Choose an asset and recorded timestamp in this dataset.')
+  }
+  const alerts = activeAlerts(data, incidents, at).filter((item) => item.systemId === systemId)
+  const scenario = scenarioAt(data, alerts.filter((item) => item.levelPct !== undefined), systemId, at)
+  const search = optimize(scenario)
+  let alternative = search.baseline
+  if (manual !== undefined) {
+    const plan = manual as Plan | null
+    if (!plan || !Array.isArray(plan.jobs) || !Array.isArray(plan.shutIns) || plan.jobs.length > 60 || plan.shutIns.length > 60 ||
+        !plan.jobs.every((job) => job && typeof job.facilityId === 'string') ||
+        !plan.shutIns.every((stop) => stop && typeof stop.wellId === 'string')) throw new Error('Invalid manual plan.')
+    alternative = simulate(scenario, plan)
+  }
+  return { data, alerts, scenario, baseline: search.baseline, manual: alternative, recommended: search.best, selectedFacilityId: facilityId as string | undefined }
+}
+
+export function nemotronHandler(config: Configuration, auth: SessionAuth, recordings: RecordingRegistry) {
+  const busy = new Set<string>()
+  return async (request: IncomingMessage, response: ServerResponse, path: string) => {
+    const session = auth.session(request)
+    if (path === '/api/nemotron' && request.method === 'GET') {
+      send(response, 200, { configured: Boolean(config.apiKey), authorized: session?.person.role === 'control', model: config.model || defaultModel })
       return
     }
-    if (request.method === 'GET') { send(response, 200, { configured: Boolean(apiKey), model }); return }
-    if (request.method !== 'POST' || !request.headers['content-type']?.startsWith('application/json')) {
-      send(response, 405, { error: 'Expected a JSON investigation request.' })
-      return
-    }
-    if (!apiKey) { send(response, 503, { error: 'Set NVIDIA_API_KEY in the local environment and restart NIGHTWATCH.' }); return }
-    let input
-    try {
-      input = await readBody(request)
-      if (!Array.isArray(input.messages) || input.messages.length < 2 || input.messages.length > 38 ||
-          !input.messages.every((message: { role?: string }) => message && ['system', 'user', 'assistant', 'tool'].includes(message.role ?? ''))) {
-        throw new Error('Invalid investigation messages.')
+    if (session?.person.role !== 'control') { send(response, 403, { error: 'Control-room sign-in is required.' }); return }
+    if (request.method !== 'POST') { send(response, 405, { error: 'Expected POST.' }); return }
+    if (path === '/api/nemotron/datasets') {
+      const body = await requestBody(request, 65_000_000, config.origin)
+      try { send(response, 200, { id: recordings.register(session.digest, body) }) }
+      catch (error) {
+        send(response, 400, { error: (error as NodeJS.ErrnoException).code ? 'The practice recording could not be loaded on the server.' : (error as Error).message })
       }
+      return
+    }
+    if (path !== '/api/nemotron') { send(response, 404, { error: 'Unknown Investigator endpoint.' }); return }
+    if (!config.apiKey) { send(response, 503, { error: 'Set NVIDIA_API_KEY in .env.local and restart NIGHTWATCH.' }); return }
+    const input = await requestBody(request, 48_000, config.origin) as Record<string, unknown> | null
+    const recording = recordings.find(input?.datasetId, session.digest)
+    if (!input || !recording) { send(response, 404, { error: 'The selected dataset must be loaded in this session.' }); return }
+    if (input.question !== undefined && (typeof input.question !== 'string' || input.question.length > 500)) {
+      send(response, 400, { error: 'Enter a question up to 500 characters.' }); return
+    }
+    if (busy.has(session.digest) || busy.size >= 2) { send(response, 429, { error: 'An investigation is already running. Try again shortly.' }); return }
+    let context
+    try { context = prepareInvestigation(recording, input) }
+    catch (error) { send(response, 422, { error: (error as Error).message }); return }
+
+    busy.add(session.digest)
+    const stopped = new AbortController()
+    response.on('close', () => stopped.abort())
+    const trace: AuditEntry[] = []
+    try {
+      const signal = AbortSignal.any([stopped.signal, AbortSignal.timeout(80_000)])
+      const summary = await investigate(context, nvidiaCompletion(config, signal), (entry) => trace.push(entry), input.question as string | undefined)
+      if (!stopped.signal.aborted) send(response, 200, { summary, trace, recommendedCost: context.recommended.costs.total })
     } catch (error) {
-      send(response, 400, { error: (error as Error).message })
-      return
-    }
-    try {
-      const upstream = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + apiKey, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model, messages: input.messages, tools, tool_choice: input.first ? 'required' : 'auto',
-          max_tokens: 2500, temperature: .2, stream: false,
-        }),
-        signal: AbortSignal.timeout(40000),
-      })
-      if (!upstream.ok || upstream.status === 202) {
-        send(response, 502, { error: 'NVIDIA returned HTTP ' + upstream.status + '. Check model access and credentials.' })
-        return
-      }
-      const result = await upstream.json()
-      const message = result.choices?.[0]?.message
-      if (!message) { send(response, 502, { error: 'NVIDIA returned no completion.' }); return }
-      send(response, 200, { role: 'assistant', content: message.content ?? null, tool_calls: message.tool_calls })
-    } catch {
-      send(response, 502, { error: 'Could not reach NVIDIA or the request timed out.' })
-    }
-  }
-  return {
-    name: 'nightwatch-nemotron',
-    configureServer(server) { server.middlewares.use((req, res, next) => { void handle(req, res, next) }) },
-    configurePreviewServer(server) { server.middlewares.use((req, res, next) => { void handle(req, res, next) }) },
+      const message = (error as Error).name === 'TimeoutError' ? 'Nemotron timed out. Try a narrower question.' : (error as Error).message
+      if (!stopped.signal.aborted) send(response, 502, { error: message, trace })
+    } finally { busy.delete(session.digest) }
   }
 }

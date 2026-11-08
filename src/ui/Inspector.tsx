@@ -8,6 +8,7 @@ import type { Scenario } from '../engine/simulate.ts'
 import { duration, money, number, stamp, titleFor, utc } from './format.ts'
 import { failureUrgency } from './AlertRail.tsx'
 import { Trace } from './Trace.tsx'
+import { fieldResponse } from '../engine/field-response.ts'
 import { SystemInvestigator } from './NemotronPanel.tsx'
 
 const metricLabels: Record<Metric, string> = {
@@ -77,10 +78,11 @@ function Response({ alert, planning, onLab }: { alert: Alert; planning: Planning
   </section>
 }
 
-export function Inspector({ data, at, selected, alerts, planning, onSelect, onLab, onClose, workflow }: {
+export function Inspector({ data, at, selected, alerts, planning, onSelect, onLab, onClose, workflow, onBriefing }: {
   data: Dataset; at: number; selected: string | null; alerts: Alert[]; planning: Planning | null
   onSelect: (id: string) => void; onLab: (systemId: string) => void; onClose: () => void
-  workflow?: (alert: Alert) => React.ReactNode
+  workflow?: (alert: Alert, response: string) => React.ReactNode
+  onBriefing?: (alert: Alert, draft: string) => void
 }) {
   const yard = data.systems.find((system) => yardId(system.id) === selected)
   const asset: Asset | undefined = (selected ? data.assets.get(selected) : undefined) ??
@@ -95,6 +97,7 @@ export function Inspector({ data, at, selected, alerts, planning, onSelect, onLa
   const headroom = facility && fill !== undefined ? Math.max(0, data.shutdownPct - fill) / 100 * facility.tank.capacityBbl : undefined
   const well = facility?.wells.find((well) => well.id === selected)
   const failure = alert?.category === 'pump_failure'
+  const approved = alert && facility ? fieldResponse(alert, facility, planning?.search.best) : ''
   return <aside id="asset-inspector" className="operator-inspector" aria-label="Asset inspector">
     <div className="workspace-pane-head"><h2>Inspector</h2><button className="stage-inspector-toggle" aria-label="Close inspector" onClick={onClose}><X size={17} /></button></div>
     {!asset ? <div className="inspector-empty"><LocateFixed size={22} /><h3>Inspect the network</h3><p>{data.systems.length} systems · {data.facilities.size} facilities</p>
@@ -121,8 +124,8 @@ export function Inspector({ data, at, selected, alerts, planning, onSelect, onLa
             <IncidentTrend data={data} at={at} alert={alert} />
           </div>
         </details>}
-        {workflow && alert && workflow(alert)}
-        {system && alert && <SystemInvestigator key={system.id + ':' + at} data={data} alerts={alerts} at={at} systemId={system.id} facilityId={facility?.id} planning={planning} />}
+        {workflow && alert && workflow(alert, approved)}
+        {system && alert && <SystemInvestigator key={system.id + ':' + at} data={data} at={at} systemId={system.id} facilityId={facility?.id} onDraft={onBriefing ? (draft) => onBriefing(alert, draft) : undefined} />}
         {facility && <details className="inspector-fold" open={!alert || undefined}>
           <summary><Waves size={15} /> Facility conditions</summary>
           <div className="inspector-section">
