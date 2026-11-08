@@ -1,4 +1,4 @@
-import type { Category } from '../engine/incidents.ts'
+import type { Category } from '../../packages/domain/incidents.ts'
 
 export const titleFor: Record<Category, string> = {
   pump_failure: 'Pump failure',

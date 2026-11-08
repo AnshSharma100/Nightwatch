@@ -7,9 +7,9 @@ import { runInNewContext } from 'node:vm'
 import { applyChange, canRead } from '../server/workflow.ts'
 import { workspaceStore } from '../server/store.ts'
 import { pushService } from '../server/push.ts'
-import { controlPerson, personFor } from '../src/engine/personnel.ts'
-import type { Person } from '../src/engine/personnel.ts'
-import type { Action, WorkflowCase } from '../src/engine/workflow.ts'
+import { controlPerson, personFor } from '../packages/domain/personnel.ts'
+import type { Person } from '../packages/domain/personnel.ts'
+import type { Action, WorkflowCase } from '../packages/domain/workflow.ts'
 
 const incident: WorkflowCase = { network: 'first-network', systemId: 'S7', facilityId: 'New site', assetId: 'Pump 8',
   category: 'pump_failure', onset: 300, observedAt: 600, evidence: ['Pump status recorded'] }

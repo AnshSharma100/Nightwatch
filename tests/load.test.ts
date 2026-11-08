@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
 import { fixture } from './fixture.ts'
-import { parseDataset } from '../src/engine/load.ts'
-import { read } from '../src/engine/model.ts'
+import { parseDataset } from '../packages/domain/load.ts'
+import { read } from '../packages/domain/model.ts'
 
 test('imports unknown topology and sorts observations by sensor time', () => {
   const sample = fixture()

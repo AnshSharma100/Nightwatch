@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { caseKey, isWorkflowUpdate, transition } from '../src/engine/workflow.ts'
-import type { Action, Actor, WorkflowCase, WorkflowEntry } from '../src/engine/workflow.ts'
+import { caseKey, isWorkflowUpdate, transition } from '../packages/domain/workflow.ts'
+import type { Action, Actor, WorkflowCase, WorkflowEntry } from '../packages/domain/workflow.ts'
 
 const incident: WorkflowCase = {
   network: 'network-a', assetId: 'pump-a', facilityId: 'facility-a', systemId: 'system-a',

@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { Truck } from 'lucide-react'
-import type { Outcome, Scenario, ScheduledJob } from '../engine/simulate.ts'
-import { frameAt } from '../engine/simulate.ts'
+import type { Outcome, Scenario, ScheduledJob } from '../../packages/domain/simulate.ts'
+import { frameAt } from './playback.ts'
 import { duration, number } from './format.ts'
 
 type Point = [number, number]

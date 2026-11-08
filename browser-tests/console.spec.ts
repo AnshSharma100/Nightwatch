@@ -33,7 +33,7 @@ test('renders the practice network and replays the shared-fleet demo', async ({ 
   await expect(lab).toBeVisible()
   await expect(lab.getByText(/less than the manual response/)).toBeVisible()
   await expect(lab.getByText('Simulated · +0 min')).toBeVisible()
-  await expect(lab.getByRole('img', { name: 'Manual schematic truck and tank playback' })).toBeVisible()
+  await expect(lab.getByRole('img', { name: 'Operator plan schematic truck and tank playback' })).toBeVisible()
   const status = await page.request.get('/api/nemotron')
   expect(status.ok()).toBeTruthy()
   expect(typeof (await status.json()).configured).toBe('boolean')

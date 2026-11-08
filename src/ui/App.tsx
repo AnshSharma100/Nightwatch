@@ -1,27 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, ArrowRight, ChevronDown, ChevronRight, CircleHelp, ClipboardList, Clock3, Database, LockKeyhole, PanelRight, Pause, Play, Upload, X } from 'lucide-react'
-import { activeAlerts, detectIncidents } from '../engine/incidents.ts'
-import type { Alert, Incident } from '../engine/incidents.ts'
-import { yardId } from '../engine/model.ts'
-import type { Dataset } from '../engine/model.ts'
-import { scenarioAt } from '../engine/simulate.ts'
-import type { Scenario } from '../engine/simulate.ts'
-import { optimize } from '../engine/optimize.ts'
-import type { Optimization } from '../engine/optimize.ts'
+import type { Alert, Incident } from '../../packages/domain/incidents.ts'
+import { yardId } from '../../packages/domain/model.ts'
+import type { Dataset } from '../../packages/domain/model.ts'
+import type { PlanComparison, RecordedSnapshot } from '../../packages/contracts/operations.ts'
 import { AlertRail } from './AlertRail.tsx'
 import { DecisionLab } from './DecisionLab.tsx'
 import { Inspector } from './Inspector.tsx'
 import { IncidentWorkflow, SignIn } from './IncidentWorkflow.tsx'
 import { useWorkflow } from './useWorkflow.ts'
-import { caseFromAlert, caseKey } from '../engine/workflow.ts'
+import { caseFromAlert, caseKey } from '../../packages/domain/workflow.ts'
 import { OperationsStrip } from './OperationsStrip.tsx'
 import { SpatialView } from './SpatialView.tsx'
 import type { Scope } from './NetworkMap.tsx'
-import { loadPractice, loadUpload, practiceNames, registerInvestigationDataset } from './datasets.ts'
+import { comparePlans, loadPractice, loadUpload, practiceNames, recordedSnapshot, registerInvestigationDataset } from './datasets.ts'
+import type { LoadedRecording } from './datasets.ts'
 import { practiceLabel, stamp } from './format.ts'
 import './workspace.css'
 
 type Demo = { stage: 'intro' | 'first-replay' | 'first-failure' | 'cluster-replay' | 'cluster'; first: Incident; last: Incident }
+
+const noAlerts: Alert[] = []
 
 function demoSequence(incidents: Incident[]) {
   const failures = incidents.filter((incident) => incident.category === 'pump_failure')
@@ -53,7 +52,10 @@ export function App() {
   const [playing, setPlaying] = useState(false)
   const [status, setStatus] = useState('Loading practice telemetry…')
   const [error, setError] = useState('')
-  const [lab, setLab] = useState<{ scenario: Scenario; demo: boolean; alerts: Alert[]; search: Optimization } | null>(null)
+  const [lab, setLab] = useState<{ comparison: PlanComparison; demo: boolean; alerts: Alert[] } | null>(null)
+  const [snapshot, setSnapshot] = useState<RecordedSnapshot | null>(null)
+  const [calculation, setCalculation] = useState<{ data: Dataset; at: number; systemId: string; comparison: PlanComparison } | null>(null)
+  const labRequest = useRef<AbortController | null>(null)
   const [demo, setDemo] = useState<Demo | null>(null)
   const workflow = useWorkflow()
   const [fieldDraft, setFieldDraft] = useState<{ key: string; text: string } | null>(null)
@@ -62,27 +64,49 @@ export function App() {
   const input = useRef<HTMLInputElement>(null)
   const scope = useMemo(() => scopeFor(data, selected), [data, selected])
   const at = data?.times[index] ?? 0
-  const alerts = useMemo(() => data ? activeAlerts(data, incidents, at) : [], [data, incidents, at])
+  const current = snapshot?.at === at ? snapshot : null
+  const alerts = current?.alerts ?? noAlerts
   const system = data?.systems.find((item) => item.id === scope.systemId)
   const editable = Boolean(data && at === data.now && !demo && !playing)
   const dismissed = new Set(editable && data ? alerts.filter((alert) => cases.get(caseKey(caseFromAlert(data, alert, at)))?.stage === 'dismissed').map((alert) => alert.assetId) : [])
   const verified = alerts.filter((alert) => alert.verified)
   const elsewhere = system && verified.length > 0 && verified.every((alert) => alert.systemId !== system.id) ? verified[0] : null
-  const planning = useMemo(() => {
-    if (!data || playing || !scope.systemId || !inspectorOpen) return null
-    const systemId = scope.systemId
-    const failures = alerts.filter((alert) => alert.category === 'pump_failure' && alert.systemId === systemId)
-    if (!failures.length || failures.some((alert) => alert.levelPct === undefined)) return null
-    const scenario = scenarioAt(data, alerts, systemId, at)
-    return { scenario, search: optimize(scenario) }
-  }, [data, alerts, at, playing, scope.systemId, inspectorOpen])
+  const planning = calculation && calculation.data === data && calculation.at === at && calculation.systemId === scope.systemId
+    ? calculation.comparison : null
 
-  function adopt(dataset: Dataset) {
-    const events = detectIncidents(dataset)
-    const current = activeAlerts(dataset, events, dataset.now).filter((alert) => alert.verified)
-    const next = current.find((alert) => !alert.automatic && alert.minutesToLimit !== null &&
-      alert.repairMinutes !== null && alert.minutesToLimit < alert.repairMinutes) ?? current[0]
+  useEffect(() => {
+    if (!data || snapshot?.at === at) return
+    const controller = new AbortController()
+    void recordedSnapshot(data, at, controller.signal).then((value) => {
+      if (!controller.signal.aborted) setSnapshot(value)
+    }).catch((error: Error) => {
+      if (!controller.signal.aborted) setError(error.message)
+    })
+    return () => controller.abort()
+  }, [data, at, snapshot?.at])
+
+  useEffect(() => {
+    if (!data || !current || playing || !scope.systemId || !inspectorOpen) return
+    const systemId = scope.systemId
+    const failures = current.alerts.filter((alert) => alert.category === 'pump_failure' && alert.systemId === systemId)
+    if (!failures.length || failures.some((alert) => alert.levelPct === undefined)) return
+    const controller = new AbortController()
+    void comparePlans(data, { at, systemId }, controller.signal).then((comparison) => {
+      if (!controller.signal.aborted) setCalculation({ data, at, systemId, comparison })
+    }).catch((error: Error) => {
+      if (!controller.signal.aborted) setError(error.message)
+    })
+    return () => controller.abort()
+  }, [data, current, at, playing, scope.systemId, inspectorOpen])
+
+  function adopt({ data: dataset, incidents: events, latest }: LoadedRecording) {
+    const verified = latest.alerts.filter((alert) => alert.verified)
+    const next = verified.find((alert) => !alert.automatic && alert.minutesToLimit !== null &&
+      alert.repairMinutes !== null && alert.minutesToLimit < alert.repairMinutes) ?? verified[0]
+    labRequest.current?.abort()
     setData(dataset)
+    setSnapshot(latest)
+    setCalculation(null)
     setIncidents(events)
     setIndex(dataset.times.length - 1)
     setSelected(next?.assetId ?? null)
@@ -93,7 +117,7 @@ export function App() {
     setLab(null)
   }
 
-  async function load(loader: () => Promise<Dataset>, label: string) {
+  async function load(loader: () => Promise<LoadedRecording>, label: string) {
     const id = ++request.current
     setStatus('Loading ' + label + '…')
     setError('')
@@ -162,22 +186,29 @@ export function App() {
     setFocusRequest((value) => value + 1)
   }
 
-  function openLab(systemId: string, demoPlan = false) {
+  async function openLab(systemId: string, demoPlan = false) {
     if (!data) return
+    labRequest.current?.abort()
+    const controller = new AbortController()
+    labRequest.current = controller
+    setPlaying(false)
+    setError('')
     try {
-      const current = planning?.scenario.system.id === systemId ? planning : null
-      const scenario = current?.scenario ?? scenarioAt(data, alerts, systemId, at)
-      setLab({ scenario, search: current?.search ?? optimize(scenario), demo: demoPlan, alerts })
-      setPlaying(false)
+      const comparison = !demoPlan && planning?.scenario.system.id === systemId ? planning :
+        await comparePlans(data, { at, systemId, demo: demoPlan }, controller.signal)
+      if (controller.signal.aborted) return
+      setLab({ comparison, demo: demoPlan, alerts })
       if (demoPlan) setDemo(null)
-      setError('')
-    } catch (error) { setError((error as Error).message) }
+    } catch (error) {
+      if (!controller.signal.aborted) setError((error as Error).message)
+    }
   }
 
   async function startDemo() {
-    const source = data?.name === 'full_week' || !names.includes('full_week') ? data : await load(() => loadPractice('full_week'), 'full week')
+    const useCurrent = data?.name === 'full_week' || !names.includes('full_week')
+    const source = useCurrent ? data && { incidents } : await load(() => loadPractice('full_week'), 'full week')
     if (!source) return
-    const sequence = demoSequence(source === data ? incidents : detectIncidents(source))
+    const sequence = demoSequence(source.incidents)
     if (!sequence) { setError('This dataset contains no detected pump failure for the guided demo.'); return }
     setPlaying(false)
     setIndex(0)
@@ -248,7 +279,7 @@ export function App() {
       {status && <p className="notice" role="status"><Activity size={15} />{status}</p>}
       {error && <div className="notice error-notice" role="alert"><CircleHelp size={16} /><span>{error}</span><button aria-label="Dismiss error" className="icon-btn" onClick={() => setError('')}><X size={15} /></button></div>}
       {data ? <>
-        <OperationsStrip data={data} alerts={alerts} onFocus={select} />
+        <OperationsStrip summary={current?.summary} onFocus={select} />
         {demo && <div className="operator-demo">
           <span className="demo-kicker"><Play size={14} /> Guided demo</span>
           <strong>{demo.stage === 'intro' ? 'The shift begins with normal operations' : demo.stage === 'first-replay' || demo.stage === 'cluster-replay' ? 'Replaying recorded telemetry' : demo.stage === 'first-failure' ? 'A pump has failed' : 'Three failures are competing for one fleet'}</strong>
@@ -306,6 +337,6 @@ export function App() {
         </section>
       </> : <section className="panel welcome"><div className="empty-glyph"><Database size={26} /></div><h2>Load a network</h2><p>Select the three EOG files together to build the network and analyze its recorded telemetry.</p><button className="primary-btn" onClick={() => input.current?.click()}><Upload size={15} /> Import dataset</button></section>}
     </main>
-    {lab && data && <DecisionLab scenario={lab.scenario} demo={lab.demo} data={data} alerts={lab.alerts} search={lab.search} onClose={() => setLab(null)} />}
+    {lab && data && <DecisionLab comparison={lab.comparison} demo={lab.demo} data={data} alerts={lab.alerts} onClose={() => setLab(null)} />}
   </div>
 }

@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { parseDataset } from '../src/engine/load.ts'
-import { activeAlerts, detectIncidents } from '../src/engine/incidents.ts'
+import { parseDataset } from '../packages/domain/load.ts'
+import { activeAlerts, detectIncidents } from '../packages/domain/incidents.ts'
 
 const upstream = process.argv[2] ?? (existsSync('../.eog-reference') ? '../.eog-reference' : '.eog-reference')
 const history = resolve(upstream, 'history')

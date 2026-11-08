@@ -3,10 +3,10 @@ import { defaultModel, tools } from '../src/agent/contracts.ts'
 import type { Completion, Message } from '../src/agent/contracts.ts'
 import { investigate } from '../src/agent/investigate.ts'
 import type { AuditEntry, Investigation } from '../src/agent/investigate.ts'
-import { activeAlerts } from '../src/engine/incidents.ts'
-import { optimize } from '../src/engine/optimize.ts'
-import { scenarioAt, simulate } from '../src/engine/simulate.ts'
-import type { Plan } from '../src/engine/simulate.ts'
+import { activeAlerts } from '../packages/domain/incidents.ts'
+import { optimize } from '../packages/domain/optimize.ts'
+import { scenarioAt, simulate } from '../packages/domain/simulate.ts'
+import { isPlan } from '../packages/contracts/operations.ts'
 import { requestBody, send } from './http.ts'
 import type { SessionAuth } from './auth.ts'
 import type { RecordingRegistry } from './datasets.ts'
@@ -60,11 +60,8 @@ export function prepareInvestigation(recording: NonNullable<ReturnType<Recording
   const search = optimize(scenario)
   let alternative = search.baseline
   if (manual !== undefined) {
-    const plan = manual as Plan | null
-    if (!plan || !Array.isArray(plan.jobs) || !Array.isArray(plan.shutIns) || plan.jobs.length > 60 || plan.shutIns.length > 60 ||
-        !plan.jobs.every((job) => job && typeof job.facilityId === 'string') ||
-        !plan.shutIns.every((stop) => stop && typeof stop.wellId === 'string')) throw new Error('Invalid manual plan.')
-    alternative = simulate(scenario, plan)
+    if (!isPlan(manual)) throw new Error('Invalid manual plan.')
+    alternative = simulate(scenario, manual)
   }
   return { data, alerts, scenario, baseline: search.baseline, manual: alternative, recommended: search.best, selectedFacilityId: facilityId as string | undefined }
 }

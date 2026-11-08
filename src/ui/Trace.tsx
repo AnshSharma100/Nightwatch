@@ -1,4 +1,4 @@
-import type { Point } from '../engine/model.ts'
+import type { Point } from '../../packages/domain/model.ts'
 import { number } from './format.ts'
 
 interface Line { label: string; color: string; points: readonly Point[] }

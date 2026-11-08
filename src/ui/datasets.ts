@@ -1,33 +1,38 @@
-import { parseDataset } from '../engine/load.ts'
-import type { Dataset } from '../engine/model.ts'
+import { hydrateRecording } from '../../packages/contracts/operations.ts'
+import type { ComparisonRequest, OpenRecording, PlanComparison, RecordedSnapshot } from '../../packages/contracts/operations.ts'
+import type { Dataset } from '../../packages/domain/model.ts'
 import { jsonRequest, workflowJson } from './useWorkflow.ts'
 
 const filenames = ['network.json', 'ops.json', 'telemetry.csv'] as const
-const practice = import.meta.env.BASE_URL + 'practice/'
-const sources = new WeakMap<Dataset, { practice: string } | { name: string; network: File; ops: File; telemetry: File }>()
+const endpoint = '/api/datasets'
+const recordingIds = new WeakMap<Dataset, string>()
 const registered = new WeakMap<Dataset, string>()
 
-async function fetchText(url: string) {
-  const response = await fetch(url)
-  if (!response.ok) throw new Error('Could not load ' + url.split('/').pop())
-  return response.text()
+function path(data: Dataset, suffix: string) {
+  const id = recordingIds.get(data)
+  if (!id) throw new Error('Reload this recording before continuing.')
+  return endpoint + '/' + encodeURIComponent(id) + suffix
 }
 
-export async function practiceNames(): Promise<string[]> {
-  const names: unknown = JSON.parse(await fetchText(practice + 'index.json'))
-  if (!Array.isArray(names) || !names.every((name) => typeof name === 'string')) {
-    throw new Error('Invalid practice dataset index')
-  }
-  return names
+function hydrate(result: OpenRecording) {
+  const data = hydrateRecording(result.data)
+  recordingIds.set(data, result.id)
+  return { ...result, data }
 }
 
-export async function loadPractice(name: string) {
-  const [network, ops, telemetry] = await Promise.all(
-    filenames.map((file) => fetchText(practice + encodeURIComponent(name) + '/' + file)),
-  )
-  const data = parseDataset(name, network, ops, telemetry)
-  sources.set(data, { practice: name })
-  return data
+export type LoadedRecording = ReturnType<typeof hydrate>
+
+export async function practiceNames() {
+  const names = await workflowJson<{ id: string; name: string }[]>(endpoint)
+  return names.map(({ name }) => name)
+}
+
+export async function loadRecording(id: string) {
+  return hydrate(await workflowJson<OpenRecording>(endpoint + '/' + encodeURIComponent(id)))
+}
+
+export function loadPractice(name: string) {
+  return loadRecording('practice-' + name)
 }
 
 export async function loadUpload(files: FileList) {
@@ -37,21 +42,26 @@ export async function loadUpload(files: FileList) {
     if (matches.length !== 1) throw new Error('Select exactly one ' + name)
     return matches[0]
   })
-  const contents = await Promise.all([network.text(), ops.text(), telemetry.text()] as const)
-  const data = parseDataset(network.webkitRelativePath.split('/')[0] || 'Imported dataset', ...contents)
-  sources.set(data, { name: data.name, network, ops, telemetry })
-  return data
+  if (network.size > 1_000_000 || ops.size > 1_000_000 || telemetry.size > 60_000_000) throw new Error('One of the EOG files exceeds the import size limit.')
+  const [networkText, opsText, telemetryText] = await Promise.all([network.text(), ops.text(), telemetry.text()])
+  return hydrate(await workflowJson<OpenRecording>(endpoint + '/import', jsonRequest({
+    name: network.webkitRelativePath.split('/')[0].slice(0, 120) || 'Imported dataset',
+    network: networkText, ops: opsText, telemetry: telemetryText,
+  })))
+}
+
+export function recordedSnapshot(data: Dataset, at: number, signal: AbortSignal) {
+  return workflowJson<RecordedSnapshot>(path(data, '/snapshot?at=' + at), { signal })
+}
+
+export function comparePlans(data: Dataset, input: ComparisonRequest, signal: AbortSignal) {
+  return workflowJson<PlanComparison>(path(data, '/compare'), { ...jsonRequest(input), signal })
 }
 
 export async function registerInvestigationDataset(data: Dataset, signal: AbortSignal, refresh = false) {
   const cached = registered.get(data)
   if (cached && !refresh) return cached
-  const source = sources.get(data)
-  if (!source) throw new Error('Reload this recording before investigating.')
-  const payload = 'practice' in source ? source : {
-    name: source.name, network: await source.network.text(), ops: await source.ops.text(), telemetry: await source.telemetry.text(),
-  }
-  const result = await workflowJson<{ id: string }>('/api/nemotron/datasets', { ...jsonRequest(payload), signal })
+  const result = await workflowJson<{ id: string }>(path(data, '/control'), { ...jsonRequest({}), signal })
   registered.set(data, result.id)
   return result.id
 }

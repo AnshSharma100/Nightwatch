@@ -1,13 +1,13 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import type { Plugin } from 'vite'
-import { isExposureInput, summarizeOperations } from '../src/engine/operations.ts'
-import { requestBody, send } from './http.ts'
+import { send } from './http.ts'
 import { workspaceStore } from './store.ts'
 import { sessionAuth } from './auth.ts'
 import { pushService } from './push.ts'
 import { workflowHandler } from './workflow.ts'
 import { nemotronHandler } from './nemotron.ts'
-import { recordingRegistry } from './datasets.ts'
+import { operationalRecordings, recordingRegistry } from './datasets.ts'
+import { operationsHandler } from './operations.ts'
 
 export function workspaceApi(env: Record<string, string>): Plugin {
   const origin = env.NIGHTWATCH_PUBLIC_ORIGIN?.replace(/\/$/, '') || undefined
@@ -16,7 +16,9 @@ export function workspaceApi(env: Record<string, string>): Plugin {
   const push = pushService(store, env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT ? {
     publicKey: env.VAPID_PUBLIC_KEY, privateKey: env.VAPID_PRIVATE_KEY, subject: env.VAPID_SUBJECT,
   } : null, origin)
-  const recordings = recordingRegistry()
+  const practice = env.NIGHTWATCH_PRACTICE_DIR || 'public/practice'
+  const recordings = recordingRegistry(practice)
+  const operations = operationsHandler(operationalRecordings(practice, env.NIGHTWATCH_RECORDINGS_DIR || '.nightwatch/recordings', origin?.startsWith('https:') ?? false), recordings, auth, origin)
   const workflow = workflowHandler(store, auth, push, recordings, origin)
   const nemotron = nemotronHandler({ apiKey: env.NVIDIA_API_KEY, baseUrl: env.NVIDIA_BASE_URL, model: env.NVIDIA_MODEL, origin }, auth, recordings)
 
@@ -32,11 +34,11 @@ export function workspaceApi(env: Record<string, string>): Plugin {
         return
       }
       if (path.startsWith('/api/nemotron')) { await nemotron(request, response, path); return }
-      if (path !== '/api/operations-summary') { next(); return }
-      if (request.method !== 'POST') { send(response, 405, { error: 'Expected POST.' }); return }
-      const failures = await requestBody(request, 128_000, origin)
-      if (!Array.isArray(failures) || !failures.every(isExposureInput)) { send(response, 400, { error: 'Invalid failure snapshot.' }); return }
-      send(response, 200, summarizeOperations(failures))
+      if (path === '/api/datasets' || path.startsWith('/api/datasets/')) {
+        await operations(request, response, new URL(request.url ?? '/', 'http://nightwatch'))
+        return
+      }
+      next()
     } catch (error) {
       if (!response.headersSent && !response.destroyed) {
         const filesystem = Boolean((error as NodeJS.ErrnoException).code)

@@ -189,9 +189,3 @@ export function simulate(scenario: Scenario, plan: Plan): Outcome {
   }
   return { plan, jobs, facilities, costs, duration: Math.max(0, ...scenario.failures.map((failure) => failure.repairMin)) }
 }
-
-export function frameAt(frames: readonly Frame[], minute: number): Frame | undefined {
-  const nextIndex = frames.findIndex((frame) => frame.minute > minute)
-  if (nextIndex === -1) return frames.at(-1)
-  return frames[Math.max(0, nextIndex - 1)]
-}

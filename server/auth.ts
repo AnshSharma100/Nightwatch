@@ -1,7 +1,7 @@
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
-import { controlPerson, personFor } from '../src/engine/personnel.ts'
-import type { WorkflowCase } from '../src/engine/workflow.ts'
+import { controlPerson, personFor } from '../packages/domain/personnel.ts'
+import type { WorkflowCase } from '../packages/domain/workflow.ts'
 import { requestBody, send } from './http.ts'
 import type { Session, WorkspaceStore } from './store.ts'
 

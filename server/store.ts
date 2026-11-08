@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
-import { personFor } from '../src/engine/personnel.ts'
-import { caseKey } from '../src/engine/workflow.ts'
+import { personFor } from '../packages/domain/personnel.ts'
+import { caseKey } from '../packages/domain/workflow.ts'
 import type { PushSubscription } from 'web-push'
-import type { DeliveryView, Person } from '../src/engine/personnel.ts'
-import type { WorkflowEntry } from '../src/engine/workflow.ts'
+import type { DeliveryView, Person } from '../packages/domain/personnel.ts'
+import type { WorkflowEntry } from '../packages/domain/workflow.ts'
 
 export interface Session { digest: string; person: Person; expires: number }
 export interface Invite { digest: string; person: Person; expires: number }

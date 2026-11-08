@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { activeAlerts, detectIncidents } from '../src/engine/incidents.ts'
+import { activeAlerts, detectIncidents } from '../packages/domain/incidents.ts'
 import { sampleDataset } from './fixture.ts'
 
 test('normal cycling never raises an incident', () => {

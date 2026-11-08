@@ -1,7 +1,7 @@
 import { ArrowUpRight, Box, Factory, Truck } from 'lucide-react'
-import { read, yardId } from '../engine/model.ts'
-import type { Dataset } from '../engine/model.ts'
-import type { Alert } from '../engine/incidents.ts'
+import { read, yardId } from '../../packages/domain/model.ts'
+import type { Dataset } from '../../packages/domain/model.ts'
+import type { Alert } from '../../packages/domain/incidents.ts'
 import { number } from './format.ts'
 
 export interface Scope { systemId?: string; facilityId?: string }

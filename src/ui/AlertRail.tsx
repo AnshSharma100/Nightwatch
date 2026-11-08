@@ -1,5 +1,5 @@
 import { AlertCircle, Check, ChevronRight, Wrench } from 'lucide-react'
-import type { Alert } from '../engine/incidents.ts'
+import type { Alert } from '../../packages/domain/incidents.ts'
 import { duration, titleFor } from './format.ts'
 
 export function failureUrgency(alert: Alert) {

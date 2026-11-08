@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { isExposureInput, summarizeOperations } from '../src/engine/operations.ts'
-import type { FailureExposure } from '../src/engine/operations.ts'
+import { isExposureInput, summarizeOperations } from '../packages/domain/operations.ts'
+import type { FailureExposure } from '../packages/domain/operations.ts'
 
 test('revenue exposure excludes repaired and already shut-in facilities', () => {
   const facility = (id: string, countdownMin: number | null, repairMin: number | null, automatic = false): FailureExposure =>

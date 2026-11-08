@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { caseKey } from '../engine/workflow.ts'
-import type { Person } from '../engine/personnel.ts'
-import type { WorkflowEntry, WorkflowUpdate } from '../engine/workflow.ts'
+import { caseKey } from '../../packages/domain/workflow.ts'
+import type { Person } from '../../packages/domain/personnel.ts'
+import type { WorkflowEntry, WorkflowUpdate } from '../../packages/domain/workflow.ts'
 
 const endpoint = import.meta.env.BASE_URL + 'api/workflow'
 const sessionEndpoint = import.meta.env.BASE_URL + 'api/session'

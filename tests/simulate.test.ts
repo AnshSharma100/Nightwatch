@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { activeAlerts, detectIncidents } from '../src/engine/incidents.ts'
-import { optimize } from '../src/engine/optimize.ts'
-import { noAction, scenarioAt, simulate } from '../src/engine/simulate.ts'
+import { activeAlerts, detectIncidents } from '../packages/domain/incidents.ts'
+import { optimize } from '../packages/domain/optimize.ts'
+import { noAction, scenarioAt, simulate } from '../packages/domain/simulate.ts'
 import { sampleDataset } from './fixture.ts'
 
 function failures(level = 80) {

@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import { BadgeCheck, ClipboardList, Copy } from 'lucide-react'
-import { actionLabel, assigneeName, availableActions, caseKey, stageLabel } from '../engine/workflow.ts'
-import type { Action, Actor, WorkflowCase, WorkflowEntry, WorkflowUpdate } from '../engine/workflow.ts'
-import { deliveryLabel, personFor } from '../engine/personnel.ts'
-import type { Person } from '../engine/personnel.ts'
+import { actionLabel, assigneeName, availableActions, caseKey, stageLabel } from '../../packages/domain/workflow.ts'
+import type { Action, Actor, WorkflowCase, WorkflowEntry, WorkflowUpdate } from '../../packages/domain/workflow.ts'
+import { deliveryLabel, personFor } from '../../packages/domain/personnel.ts'
+import type { Person } from '../../packages/domain/personnel.ts'
 import { stamp } from './format.ts'
 import { jsonRequest, workflowJson } from './useWorkflow.ts'
 

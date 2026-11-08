@@ -1,4 +1,4 @@
-import type { Dataset, Facility, System } from '../engine/model.ts'
+import type { Dataset, Facility, System } from '../../packages/domain/model.ts'
 
 export type Position = [number, number, number]
 type Ground = [x: number, z: number]

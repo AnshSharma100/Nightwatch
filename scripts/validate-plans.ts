@@ -1,10 +1,10 @@
 import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { parseDataset } from '../src/engine/load.ts'
-import { activeAlerts, detectIncidents } from '../src/engine/incidents.ts'
-import { optimize } from '../src/engine/optimize.ts'
-import { noAction, scenarioAt, simulate } from '../src/engine/simulate.ts'
+import { parseDataset } from '../packages/domain/load.ts'
+import { activeAlerts, detectIncidents } from '../packages/domain/incidents.ts'
+import { optimize } from '../packages/domain/optimize.ts'
+import { noAction, scenarioAt, simulate } from '../packages/domain/simulate.ts'
 
 const history = join(process.argv[2] ?? (existsSync('../.eog-reference') ? '../.eog-reference' : '.eog-reference'), 'history')
 const load = (folder: string) => {

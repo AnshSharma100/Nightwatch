@@ -3,9 +3,9 @@ import { test } from 'node:test'
 import { investigate } from '../src/agent/investigate.ts'
 import type { AuditEntry, Investigation } from '../src/agent/investigate.ts'
 import type { Call } from '../src/agent/contracts.ts'
-import { activeAlerts, detectIncidents } from '../src/engine/incidents.ts'
-import { optimize } from '../src/engine/optimize.ts'
-import { scenarioAt } from '../src/engine/simulate.ts'
+import { activeAlerts, detectIncidents } from '../packages/domain/incidents.ts'
+import { optimize } from '../packages/domain/optimize.ts'
+import { scenarioAt } from '../packages/domain/simulate.ts'
 import { sampleDataset } from './fixture.ts'
 
 function context(): Investigation {

@@ -1,4 +1,4 @@
-import { parseDataset } from '../src/engine/load.ts'
+import { parseDataset } from '../packages/domain/load.ts'
 
 export const beginning = Date.UTC(2026, 10, 7) / 1000
 

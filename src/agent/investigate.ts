@@ -1,9 +1,9 @@
-import type { Alert } from '../engine/incidents.ts'
-import { read, sensorMetrics, windowed, yardId } from '../engine/model.ts'
-import type { Dataset, Metric } from '../engine/model.ts'
-import { optimize } from '../engine/optimize.ts'
-import { simulate } from '../engine/simulate.ts'
-import type { Outcome, Plan, Scenario } from '../engine/simulate.ts'
+import type { Alert } from '../../packages/domain/incidents.ts'
+import { read, sensorMetrics, windowed, yardId } from '../../packages/domain/model.ts'
+import type { Dataset, Metric } from '../../packages/domain/model.ts'
+import { optimize } from '../../packages/domain/optimize.ts'
+import { simulate } from '../../packages/domain/simulate.ts'
+import type { Outcome, Plan, Scenario } from '../../packages/domain/simulate.ts'
 import type { Call, Completion, Message } from './contracts.ts'
 
 export interface Investigation {
