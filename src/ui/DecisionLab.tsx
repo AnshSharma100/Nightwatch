@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, FlaskConical, Focus, Pause, Play, Plus, Truck, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, FlaskConical, Focus, Pause, Play, Plus, RotateCcw, SkipForward, Truck, X } from 'lucide-react'
 import type { PlanComparison } from '../../packages/contracts/operations.ts'
 import type { Alert } from '../../packages/domain/incidents.ts'
 import type { Dataset } from '../../packages/domain/model.ts'
@@ -31,6 +31,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
   const [error, setError] = useState('')
   const [minute, setMinute] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState(1)
   const [dirty, setDirty] = useState(false)
   const [editorOpen, setEditorOpen] = useState(() => window.matchMedia('(min-width: 621px)').matches)
   const [selectedBranch, selectBranch] = useState<BranchKey>('recommended')
@@ -48,11 +49,31 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
   const scope = useMemo(() => ({ systemId: scenario.system.id, facilityId: focusSite ?? undefined }), [scenario.system.id, focusSite])
   const savings = manual === null ? null : manual.costs.total - search.best.costs.total
   const canPlay = Boolean(branch.outcome && max > 0)
+  const events = useMemo(() => {
+    const outcome = branch.outcome
+    if (!outcome) return []
+    return [
+      ...outcome.jobs.flatMap((job) => [
+        { at: job.dispatchMin, label: 'Truck ' + job.truck + ' departs for ' + job.facilityId },
+        ...job.arrivals.map((at) => ({ at, label: 'Truck ' + job.truck + ' collects water at ' + job.facilityId })),
+        { at: job.freeMin, label: 'Truck ' + job.truck + ' returns to the yard' },
+      ]),
+      ...outcome.plan.shutIns.map((stop) => ({ at: stop.startMin, label: stop.wellId + ' is shut in by this plan' })),
+      ...outcome.facilities.flatMap((result) => result.autoAt === null ? [] :
+        [{ at: result.autoAt, label: result.facilityId + ' reaches automatic shut-in' }]),
+      ...scenario.failures.map((failure) => ({ at: failure.repairMin, label: failure.facility.id + ' reaches modeled repair' })),
+    ].filter((event) => event.at >= 0 && event.at <= max).sort((a, b) => a.at - b.at)
+  }, [branch.outcome, scenario.failures, max])
+  const nextEvent = events.find((event) => event.at > minute + .001)
+  const currentEvents = events.filter((event) => Math.abs(event.at - minute) <= .001)
+  const eventDescription = !branch.outcome ? 'Configure the operator plan and run its simulation.' : currentEvents.length ?
+    currentEvents.map((event) => event.label).join(' · ') : nextEvent ?
+      'Next · +' + duration(nextEvent.at) + ' · ' + nextEvent.label : 'All modeled repairs are complete.'
 
   useEffect(() => {
     heading.current?.focus({ preventScroll: true })
     const previousTitle = document.title
-    document.title = 'Decision Lab · NIGHTWATCH'
+    document.title = 'Butterfly Effect · NIGHTWATCH'
     return () => { request.current?.abort(); document.title = previousTitle }
   }, [])
   useEffect(() => {
@@ -62,14 +83,14 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
   }, [onClose])
   useEffect(() => {
     if (!playing) return
-    const timer = setInterval(() => setMinute((value) => Math.min(max, value + 5)), 150)
+    const timer = setInterval(() => setMinute((value) => Math.min(max, value + speed)), 1000)
     return () => clearInterval(timer)
-  }, [playing, max])
+  }, [playing, max, speed])
   useEffect(() => {
     if (playing && (!canPlay || minute >= max)) setPlaying(false)
   }, [canPlay, minute, max, playing])
 
-  function edit(plan: Plan) { setDraft(plan); setDirty(true); setError('') }
+  function edit(plan: Plan) { setPlaying(false); setDraft(plan); setDirty(true); setError('') }
   async function run() {
     const controller = new AbortController()
     request.current = controller
@@ -105,20 +126,21 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
       <div key={key} className="schematic-empty"><strong>{label}</strong><p>Configure actions and run a simulation.</p></div>)}
   </div>
 
-  return <main className="lab-shell" aria-labelledby="lab-title">
+  return <main className="lab-shell" aria-label="Decision Lab">
     <header className="lab-header">
       <button className="soft-btn lab-back" aria-label="Close Decision Lab" onClick={onClose}><ArrowLeft size={17} /><span>Operations</span></button>
-      <div className="lab-title"><FlaskConical size={23} /><div><span className="eyebrow">BUTTERFLY EFFECT / {scenario.system.id}</span><h1 id="lab-title" ref={heading} tabIndex={-1}>Decision Lab</h1></div></div>
+      <div className="lab-title"><FlaskConical size={23} /><div><span className="eyebrow">DECISION LAB / {scenario.system.id}</span><h1 id="lab-title" ref={heading} tabIndex={-1}>Butterfly Effect</h1></div></div>
       <p className="lab-origin"><span className="tag">Simulation</span> {stamp(scenario.at)} · {scenario.failures.length} failed pumps · {scenario.system.fleetSize} shared trucks</p>
       <ThemeToggle {...theme} />
     </header>
     <div className="lab-studio">
-      <aside className="lab-plans" aria-label="Response plans">
+      <aside className="lab-plans" aria-label="Response plans" onPointerDownCapture={() => setPlaying(false)} onFocusCapture={() => setPlaying(false)}>
         <div className="lab-pane-head"><h2>Response plans</h2><span>3 futures</span></div>
+        <p className="lab-guide">Choose a future to inspect. Edit your truck and well actions, then run the simulation to compare costs. <strong>Playback waits for you.</strong></p>
         <div className="branch-list" role="group" aria-label="Preview a plan">
           {branches.map(({ key, label, color, outcome }) => <button key={key} className={'branch-choice ' + key} type="button"
             style={{ '--branch-color': color } as React.CSSProperties} aria-pressed={selectedBranch === key} onClick={() => selectBranch(key)}>
-            <span><strong>{label}</strong><small>{key === 'recommended' ? 'Lowest cost found' : key === 'baseline' ? 'Recorded starting conditions' :
+            <span><strong>{label}</strong><small>{key === 'recommended' ? 'Lowest simulated cost found' : key === 'baseline' ? 'Wait for repair without intervention' :
               outcome ? dirty ? 'Last simulated run' : demo ? 'Demo dispatch by alert priority' : 'Your simulated intervention' : 'Unconfigured'}</small></span>
             <b>{outcome ? money(outcome.costs.total) : '—'}</b>
           </button>)}
@@ -126,12 +148,12 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
         <details className="plan-editor" open={editorOpen} onToggle={(event) => setEditorOpen(event.currentTarget.open)}>
           <summary>Edit operator plan</summary>
           <div className="plan-editor-body">
-            <p className="muted">Schedule full truck trips or hold individual wells through repair.</p>
+            <p className="muted">Schedule truck trips or hold wells through repair. These actions are simulated. Field assignments are approved separately in Operations.</p>
             <PlanEditor scenario={scenario} draft={draft} edit={edit} running={running} />
             {error && <p className="form-error" role="alert">{error}</p>}
             <div className="editor-actions"><button className="primary-btn" disabled={!dirty || running} onClick={() => void run()}>
               {running ? 'Simulating…' : 'Run simulation'} <ArrowRight size={15} /></button>
-              {dirty && <small>Unsaved changes</small>}</div>
+              {dirty && <small>Changes need a new simulation</small>}</div>
           </div>
         </details>
       </aside>
@@ -149,7 +171,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
           <span>Routes are schematic. Tanks and well states use simulated frames.</span>
         </div>
       </section>
-      <aside className="lab-evidence" aria-label="Costs and operational outcomes">
+      <aside className="lab-evidence" aria-label="Costs and operational outcomes" onPointerDownCapture={() => setPlaying(false)} onFocusCapture={() => setPlaying(false)}>
         <div className="lab-pane-head"><h2>Cost &amp; impact</h2></div>
         <div className="lab-evidence-body">
           {savings !== null && <p className="lab-savings">{savings > .005 ? money(savings) + ' less than the operator plan' :
@@ -159,7 +181,7 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
             {scenario.failures.map(({ facility }) => <option key={facility.id} value={facility.id}>{facility.id}</option>)}
           </select></label>
           <FacilityComparison key={site} scenario={scenario} site={site} branches={branches} minute={minute} max={max} />
-          <details className="method"><summary>Recommended actions</summary>
+          <details className="method" open><summary>Recommended actions</summary>
             {search.best.jobs.map((job) => <p key={job.truck + ':' + job.dispatchMin}><strong>Truck {job.truck} → {job.facilityId}</strong><br />
               Dispatch +{duration(job.dispatchMin)} · Arrive {job.arrivals.map((arrival) => '+' + duration(arrival)).join(', ')} · Free +{duration(job.freeMin)}</p>)}
             {search.best.plan.shutIns.map((stop) => <p key={stop.wellId}>Shut in {stop.wellId} at +{duration(stop.startMin)} through repair.</p>)}
@@ -175,14 +197,22 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose }: 
       </aside>
     </div>
     <footer className="lab-scrubber" aria-label="Simulated timeline">
-      <button className="icon-btn" disabled={!canPlay} aria-label={playing ? 'Pause simulation' : 'Play simulation'} onClick={() => {
+      <div className="lab-playback-controls"><button className="soft-btn lab-play" disabled={!canPlay} aria-label={playing ? 'Pause simulation' : 'Play simulation'} onClick={() => {
         if (!playing && minute >= max) setMinute(0)
         setPlaying(!playing)
-      }}>{playing ? <Pause size={17} /> : <Play size={17} />}</button>
+      }}>{playing ? <Pause size={17} /> : <Play size={17} />}<span>{playing ? 'Pause' : 'Play'}</span></button>
+      <button className="icon-btn" aria-label="Restart simulation playback" disabled={!canPlay || minute === 0} onClick={() => { setPlaying(false); setMinute(0) }}><RotateCcw size={16} /></button>
+      <button className="soft-btn" disabled={!canPlay || !nextEvent} aria-label="Next simulation event" title={nextEvent?.label} onClick={() => {
+        setPlaying(false)
+        if (nextEvent) setMinute(nextEvent.at)
+      }}><SkipForward size={16} /><span>Next event</span></button></div>
       <div className="lab-scrubber-time"><span className="eyebrow">FUTURE PLAYHEAD</span><strong>Simulated · +{duration(minute)}</strong></div>
       <input aria-label="Simulated minutes after decision" type="range" min="0" max={max} step="any" value={minute}
         onChange={(event) => { setPlaying(false); setMinute(+event.target.value) }} />
-      <small>+{duration(max)} repair horizon</small>
+      <label className="lab-speed">Playback speed<select aria-label="Simulation playback speed" value={speed} onChange={(event) => setSpeed(+event.target.value)}>
+        <option value="1">1 min / second</option><option value="5">5 min / second</option><option value="15">15 min / second</option>
+      </select></label>
+      <div className="lab-playback-note"><strong>{playing ? 'Playing' : minute >= max ? 'Finished' : 'Paused'}</strong><span title={eventDescription}>{eventDescription}</span><small>+{duration(max)} repair horizon</small></div>
     </footer>
   </main>
 }
