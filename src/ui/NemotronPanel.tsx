@@ -3,7 +3,7 @@ import { ScanLine } from 'lucide-react'
 import type { AuditEntry, Investigation } from '../agent/investigate.ts'
 import type { Dataset } from '../../packages/domain/model.ts'
 import type { Plan } from '../../packages/domain/simulate.ts'
-import { registerInvestigationDataset } from './datasets.ts'
+import { recordingId, registerInvestigationDataset } from './datasets.ts'
 import { jsonRequest } from './useWorkflow.ts'
 import { money, stamp } from './format.ts'
 
@@ -24,7 +24,7 @@ function automaticSites(plan?: ToolPlan) {
   return plan?.facilities?.filter((site) => site.auto_shut_in_after_min !== null).map((site) => site.facility_id)
 }
 
-function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: (text: string) => void }) {
+function InvestigatorForm({ context, onDraft, onRequestAccess }: { context: Selection; onDraft?: (text: string) => void; onRequestAccess?: () => void }) {
   const [status, setStatus] = useState<{ configured: boolean; authorized: boolean } | null>(null)
   const [question, setQuestion] = useState('')
   const [audit, setAudit] = useState<AuditEntry[]>([])
@@ -33,6 +33,7 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
   const [drafted, setDrafted] = useState(false)
+  const [investigatedAt, setInvestigatedAt] = useState<number | null>(null)
   const request = useRef<AbortController | null>(null)
   const endpoint = '/api/nemotron'
   const system = context.data.systems.find((item) => item.id === context.systemId)
@@ -60,6 +61,7 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
   }, [])
 
   async function analyze() {
+    if (!enabled || working) return
     const controller = new AbortController()
     request.current = controller
     setWorking(true)
@@ -68,6 +70,7 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
     setRecommended(undefined)
     setError('')
     setDrafted(false)
+    setInvestigatedAt(context.at)
     try {
       async function run(refresh = false) {
         const datasetId = await registerInvestigationDataset(context.data, controller.signal, refresh)
@@ -93,18 +96,20 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
   }
 
   return <div className="investigator-form">
-    <p>{context.systemId} · Frozen at {stamp(context.at)}</p>
-    <p>{status === null ? 'Checking NVIDIA configuration…' : !status.configured ? 'Set NVIDIA_API_KEY in .env.local and restart NIGHTWATCH.' :
-      !status.authorized ? 'Sign in as a control-room operator to investigate.' :
-      'The server runs the tools and sends the selected evidence and computed outcomes to NVIDIA.'}</p>
-    <label>Investigation question<textarea disabled={!enabled || working} rows={2} maxLength={500} value={question}
+    <p>{context.systemId} · Selected recording at {stamp(context.at)}</p>
+    <p>{status === null ? 'Checking AI availability. You can prepare a question now.' : !status.configured ? 'AI is unavailable. Configure NVIDIA on the server to run an investigation. You can still prepare a question.' :
+      !status.authorized ? 'Open Control room and sign in to run an investigation. You can prepare a question now.' :
+      'Ask about the evidence, compare truck plans, or prepare a field briefing. Tools use this recorded snapshot and do not dispatch work.'}</p>
+    {status?.configured && !status.authorized && onRequestAccess && <div><button className="small-btn" onClick={onRequestAccess}>Open Control room</button></div>}
+    <label>Investigation question<textarea disabled={working} rows={2} maxLength={500} value={question}
       onChange={(event) => setQuestion(event.target.value)} placeholder="What is driving the recommendation for this system?" /></label>
     <div className="investigator-buttons">
-      {context.facilityId && (system?.fleetSize ?? 0) >= 2 && <button className="small-btn" disabled={!enabled || working}
+      {context.facilityId && (system?.fleetSize ?? 0) >= 2 && <button className="small-btn" disabled={working}
         onClick={() => setQuestion('Compare sending both trucks to ' + context.facilityId + ' against the recommended plan. Simulate one trip each from truck slots 1 and 2 sent there now and explain the shared fleet tradeoff.')}>Test two trucks here</button>}
-      <button className="small-btn" disabled={!enabled || working} onClick={() => setQuestion('Draft a field briefing for the current incidents using recorded evidence and the calculated response.')}>Draft field briefing</button>
+      <button className="small-btn" disabled={working} onClick={() => setQuestion('Draft a field briefing for the current incidents using recorded evidence and the calculated response.')}>Draft field briefing</button>
       <button className="primary-btn" disabled={!enabled || working} onClick={() => void analyze()}>{working ? 'Investigating…' : 'Investigate with Nemotron'}</button>
     </div>
+    {investigatedAt !== null && <p className="investigator-snapshot">{working ? 'Investigating' : 'Investigation from'} {stamp(investigatedAt)}{investigatedAt !== context.at ? ' · Replay has moved. Run again to investigate the selected time.' : ''}</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
     {summary && <p className="investigator-answer">{summary}</p>}
     {(recommendedCost !== undefined || cost !== undefined) && <dl className="values" aria-label="Verified tool costs">
@@ -118,8 +123,8 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
         {alternativeShutIns && <><dt>Alternative</dt><dd>{alternativeShutIns.join(', ') || 'None'}</dd></>}
       </dl>
     </section>}
-    {summary && onDraft && audit.some((entry) => entry.ok && entry.name === 'draft_briefing') && <div><button className="small-btn"
-      onClick={() => { onDraft(summary); setDrafted(true) }}>{drafted ? 'Draft available in Incident workflow' : 'Use as editable assignment draft'}</button></div>}
+    {summary && onDraft && audit.some((entry) => entry.ok && entry.name === 'draft_briefing') && <div><button className="small-btn" disabled={investigatedAt !== context.at}
+      onClick={() => { onDraft(summary); setDrafted(true) }}>{investigatedAt !== context.at ? 'Run again before using this draft' : drafted ? 'Draft available in Incident workflow' : 'Use as editable assignment draft'}</button></div>}
     {audit.length > 0 && <details className="investigator-trace"><summary>Tool trace · {audit.length} calls</summary><ol aria-label="Nemotron tool calls">
       {audit.map((entry, i) => <li key={i}><details><summary>{entry.name} · {entry.ok ? 'complete' : 'tool error'}</summary>
         <pre>{JSON.stringify({ input: entry.input, output: entry.result }, null, 2)}</pre></details></li>)}
@@ -128,20 +133,20 @@ function InvestigatorForm({ context, onDraft }: { context: Selection; onDraft?: 
 }
 
 function InvestigatorDisclosure({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false)
-  return <details className="investigator" onToggle={(event) => setOpen(event.currentTarget.open)}>
+  const [opened, setOpened] = useState(false)
+  return <details className="investigator" onToggle={(event) => { if (event.currentTarget.open) setOpened(true) }}>
     <summary><ScanLine size={15} /> AI Investigator <span className="tag">Nemotron</span></summary>
-    {open && children}
+    {opened && children}
   </details>
 }
 
 export function NemotronPanel({ context }: { context: Investigation }) {
-  return <InvestigatorDisclosure><InvestigatorForm context={{
+  return <InvestigatorDisclosure key={recordingId(context.data) + ':' + context.scenario.system.id + ':' + context.scenario.at}><InvestigatorForm context={{
     data: context.data, at: context.scenario.at, systemId: context.scenario.system.id,
     facilityId: context.selectedFacilityId ?? context.scenario.failures[0]?.facility.id, manual: context.manual.plan,
   }} /></InvestigatorDisclosure>
 }
 
-export function SystemInvestigator({ onDraft, ...context }: Selection & { onDraft?: (text: string) => void }) {
-  return <InvestigatorDisclosure><InvestigatorForm context={context} onDraft={onDraft} /></InvestigatorDisclosure>
+export function SystemInvestigator({ onDraft, onRequestAccess, ...context }: Selection & { onDraft?: (text: string) => void; onRequestAccess?: () => void }) {
+  return <InvestigatorDisclosure key={recordingId(context.data) + ':' + context.systemId + ':' + context.facilityId}><InvestigatorForm context={context} onDraft={onDraft} onRequestAccess={onRequestAccess} /></InvestigatorDisclosure>
 }

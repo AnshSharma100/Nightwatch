@@ -32,12 +32,16 @@ Open [Operations](http://127.0.0.1:4180/) or [NIGHTWATCH Field](http://127.0.0.1
 
 1. Open the full-week recording. Start the guided replay or use **Recent recorded incidents** to jump from a calm latest timestamp to a real alarm.
 2. For the shared-fleet example, choose the **Oct 10, 09:00 UTC** snapshot. Select `S4_PUMP_A`. Show the recorded fault evidence, the forecast, and the separate hourly risk and projected loss.
-3. Open **Compare response plans**. Choose a plan to preview on the simulated 3D network. Add a truck job or well stop and run it. Switch to **Compare schematics** for simultaneous playback. The recommendation is the lowest cost found within the search described in the evidence pane.
+3. Open **Butterfly Effect** from the operator action bar or incident brief. Choose a plan to preview on the simulated 3D network. Add a truck job or well stop and run it. Results start paused at time zero. Use **Play**, the speed selector, **Next event**, or the slider to inspect outcomes at your pace. Editing or inspecting evidence pauses playback. Switch to **Compare schematics** for simultaneous playback. The recommendation is the lowest cost found within the search described in the evidence pane.
 4. Open **AI Investigator** on the incident. Ask why both trucks should or should not go to Facility A. Expand the tool trace and compare the computed outcome with the answer.
 5. Review and confirm the incident. Pick a clocked-in engineer, enter the approved instructions, then select **Send to Field**. On a separate enrolled browser, open the assignment from the inbox or notification, acknowledge it, and post a progress note. Show the control room receiving the update.
 6. Import a second EOG recording or switch to the no-key mock test snapshot to show dynamic topology and recalculated results.
 
 Prepare the enrolled device and NVIDIA sign-in before the demo. If the network is unreliable, keep the local simulator open and use the recorded evidence, screenshots, or inbox to explain the parts that depend on a provider.
+
+**Recorded timeline** replays measurements already in the dataset. It defaults to one five-minute observation every five seconds and waits for a complete server frame. Selecting an alert, working in the inspector, or detecting a new incident pauses it. **Next incident** jumps directly to recorded evidence. Historical replay is for investigation and simulated comparisons; switch to the latest recording to approve field work. Butterfly Effect projects a possible future from the selected recording and never changes those measurements.
+
+The incident brief shows the detection reason, tank level and limit, pump state, truck arrival time, shut-in forecast, and calculated response. **Review alert**, **Butterfly Effect**, and **Send to Field** are the operator’s three main actions. Viewing evidence and running deterministic comparisons require no sign-in. AI questions can be drafted before sign-in, while executing NVIDIA requests and approving field work require the control-room session.
 
 ## Field setup and phone testing
 

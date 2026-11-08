@@ -70,19 +70,21 @@ function Response({ alert, planning, onLab }: { alert: Alert; planning: Planning
     {jobs.length + shutIns.length > 0 ? <ul>
       {jobs.map((job) => <li key={job.truck + ':' + job.dispatchMin}>Truck {job.truck} · {job.trips} {job.trips === 1 ? 'trip' : 'trips'} · first arrival in {duration(job.arrivals[0])}</li>)}
       {shutIns.map((stop) => <li key={stop.wellId}>Shut in {stop.wellId} at +{duration(stop.startMin)}</li>)}
-    </ul> : <p>{!result ? 'A comparison needs tank readings from all failed facilities.' : alert.automatic ? 'Monitor through repair. Wells are already shut in.' :
+    </ul> : <p>{!result ? 'Open Butterfly Effect to compare truck trips, well shut-ins, and waiting for repair.' : alert.automatic ? 'Monitor through repair. Wells are already shut in.' :
       result.autoAt === null ? 'Monitor through repair.' : 'Allow automatic shut-in through repair.'}</p>}
+    {result && !jobs.length && (planning?.search.best.jobs.length ?? 0) > 0 && <p>The shared trucks are allocated to other facilities in this plan. Compare the system-wide impact in Butterfly Effect.</p>}
     {baseline && <p className="baseline-loss">{money(baseline.costs.oil + baseline.costs.gas)} projected lost revenue here without action</p>}
     {result && <p className="baseline-loss">{money(result.costs.total)} recommended cost here · oil, gas and trucking</p>}
-    <button className="primary-btn" disabled={!planning} onClick={() => onLab(alert.systemId)}>Compare response plans <ArrowUpRight size={15} /></button>
+    <button className="primary-btn" aria-label="Compare response plans" disabled={alert.levelPct === undefined} onClick={() => onLab(alert.systemId)}>Butterfly Effect · compare plans <ArrowUpRight size={15} /></button>
   </section>
 }
 
-export function Inspector({ data, at, selected, alerts, planning, onSelect, onLab, onClose, workflow, onBriefing }: {
+export function Inspector({ data, at, selected, alerts, planning, onSelect, onLab, onClose, workflow, onBriefing, onRequestAccess }: {
   data: Dataset; at: number; selected: string | null; alerts: Alert[]; planning: Planning | null
   onSelect: (id: string) => void; onLab: (systemId: string) => void; onClose: () => void
   workflow?: (alert: Alert, response: string) => React.ReactNode
   onBriefing?: (alert: Alert, draft: string) => void
+  onRequestAccess?: () => void
 }) {
   const yard = data.systems.find((system) => yardId(system.id) === selected)
   const asset: Asset | undefined = (selected ? data.assets.get(selected) : undefined) ??
@@ -106,7 +108,13 @@ export function Inspector({ data, at, selected, alerts, planning, onSelect, onLa
         <header className="asset-heading"><div className={'asset-type' + (failure ? ' failure-type' : '')}>{alert ? titleFor[alert.category] : assetLabels[asset.kind]}</div>
           <h3>{asset.kind === 'yard' ? 'Emergency truck yard' : asset.id}</h3>
           <p>{[asset.systemId, facility?.id !== asset.id ? facility?.id : undefined].filter(Boolean).join(' / ')}</p>
+          {alert && <p className="incident-reason">Detected because {alert.evidence[0]?.replace(/^./, (letter) => letter.toLowerCase())}</p>}
         </header>
+        {alert && facility && <section className="incident-readings" aria-label="Current incident readings">
+          <div><span>Tank fill / limit</span><strong>{number(fill)}{fill === undefined ? '' : '%'} / {data.shutdownPct}%</strong></div>
+          <div><span>Pump</span><strong>{state === 2 ? 'Fault' : state === 1 ? 'Running' : state === 0 ? 'Stopped' : 'Unavailable'}</strong></div>
+          <div><span>Truck arrival</span><strong>{duration(facility.trucking.responseMin)}</strong></div>
+        </section>}
         {alert && failure && <section className="incident-forecast" aria-label="Shutdown forecast">
           <div><span><Clock3 size={13} /> Shut-in forecast</span><strong>{failureUrgency(alert)}</strong></div>
           <div><span>Repair remaining</span><strong>{duration(alert.repairMinutes)}</strong></div>
@@ -125,7 +133,7 @@ export function Inspector({ data, at, selected, alerts, planning, onSelect, onLa
           </div>
         </details>}
         {workflow && alert && workflow(alert, approved)}
-        {system && alert && <SystemInvestigator key={system.id + ':' + at} data={data} at={at} systemId={system.id} facilityId={facility?.id} onDraft={onBriefing ? (draft) => onBriefing(alert, draft) : undefined} />}
+        {system && alert && <SystemInvestigator key={system.id + ':' + alert.category + ':' + alert.onset} data={data} at={at} systemId={system.id} facilityId={facility?.id} onRequestAccess={onRequestAccess} onDraft={onBriefing ? (draft) => onBriefing(alert, draft) : undefined} />}
         {facility && <details className="inspector-fold" open={!alert || undefined}>
           <summary><Waves size={15} /> Facility conditions</summary>
           <div className="inspector-section">

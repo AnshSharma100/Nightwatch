@@ -15,7 +15,7 @@ import { SpatialView } from './SpatialView.tsx'
 import type { Scope } from './NetworkMap.tsx'
 import { comparePlans, loadPractice, loadRecording, loadUpload, practiceNames, recordedSnapshot, recordingId, registerInvestigationDataset } from './datasets.ts'
 import type { LoadedRecording } from './datasets.ts'
-import { practiceLabel, stamp } from './format.ts'
+import { practiceLabel, stamp, titleFor } from './format.ts'
 import { BrandMark, ThemeToggle, useTheme } from './Theme.tsx'
 import './workspace.css'
 
@@ -57,6 +57,10 @@ export function App() {
   const [timelineOpen, setTimelineOpen] = useState(false)
   const [focusRequest, setFocusRequest] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [replayDelay, setReplayDelay] = useState(5000)
+  const [replayNotice, setReplayNotice] = useState('')
+  const account = useRef<HTMLDetailsElement>(null)
+  const [openingLab, setOpeningLab] = useState(false)
   const [status, setStatus] = useState('Loading practice telemetry…')
   const [error, setError] = useState('')
   const [lab, setLab] = useState<LabView | null>(null)
@@ -73,13 +77,17 @@ export function App() {
   const request = useRef(0)
   const input = useRef<HTMLInputElement>(null)
   const scope = useMemo(() => scopeFor(data, selected), [data, selected])
-  const at = data?.times[index] ?? 0
-  const current = snapshot?.at === at ? snapshot : null
+  // Publish a complete server frame together. A pending playhead must never
+  // clear incidents or mix new 3D readings with the previous frame's forecast.
+  const requestedAt = data?.times[index] ?? 0
+  const current = snapshot
+  const at = current?.at ?? requestedAt
+  const refreshing = Boolean(data && at !== requestedAt)
   const alerts = current?.alerts ?? noAlerts
   const recent = useMemo(() => incidents.filter((incident) => incident.clearedAt !== null && incident.clearedAt <= at)
     .sort((a, b) => b.detectedAt - a.detectedAt).slice(0, 3), [incidents, at])
   const system = data?.systems.find((item) => item.id === scope.systemId)
-  const editable = Boolean(data && at === data.now && !demo && !playing)
+  const editable = Boolean(data && at === data.now && !demo && !playing && !refreshing)
   const dismissed = new Set(editable && data ? alerts.filter((alert) => cases.get(caseKey(caseFromAlert(data, alert, at)))?.stage === 'dismissed').map((alert) => alert.assetId) : [])
   const verified = alerts.filter((alert) => alert.verified)
   const elsewhere = system && verified.length > 0 && verified.every((alert) => alert.systemId !== system.id) ? verified[0] : null
@@ -87,18 +95,28 @@ export function App() {
     ? calculation.comparison : null
 
   useEffect(() => {
-    if (!data || snapshot?.at === at) return
+    if (!data || snapshot?.at === requestedAt) return
     const controller = new AbortController()
-    void recordedSnapshot(data, at, controller.signal).then((value) => {
-      if (!controller.signal.aborted) setSnapshot(value)
+    void recordedSnapshot(data, requestedAt, controller.signal).then((value) => {
+      if (controller.signal.aborted) return
+      const previous = new Set(snapshot?.alerts.filter((alert) => alert.verified).map((alert) => alert.assetId + ':' + alert.detectedAt))
+      if (playing && !demo && value.alerts.some((alert) => alert.verified && !previous.has(alert.assetId + ':' + alert.detectedAt))) {
+        setPlaying(false)
+        setReplayNotice('Paused at a new incident. Select the alert to review it.')
+      }
+      setSnapshot(value)
     }).catch((error: Error) => {
-      if (!controller.signal.aborted) setError(error.message)
+      if (!controller.signal.aborted) {
+        setPlaying(false)
+        setIndex(data.times.indexOf(at))
+        setError(error.message)
+      }
     })
     return () => controller.abort()
-  }, [data, at, snapshot?.at])
+  }, [data, requestedAt, snapshot?.at])
 
   useEffect(() => {
-    if (!data || !current || playing || !scope.systemId || !inspectorOpen) return
+    if (!data || !current || playing || refreshing || !scope.systemId || !inspectorOpen) return
     const systemId = scope.systemId
     const failures = current.alerts.filter((alert) => alert.category === 'pump_failure' && alert.systemId === systemId)
     if (!failures.length || failures.some((alert) => alert.levelPct === undefined)) return
@@ -109,7 +127,7 @@ export function App() {
       if (!controller.signal.aborted) setError(error.message)
     })
     return () => controller.abort()
-  }, [data, current, at, playing, scope.systemId, inspectorOpen])
+  }, [data, current, at, playing, refreshing, scope.systemId, inspectorOpen])
 
   function adopt({ data: dataset, incidents: events, latest }: LoadedRecording) {
     const verified = latest.alerts.filter((alert) => alert.verified)
@@ -125,6 +143,7 @@ export function App() {
     setInspectorOpen(Boolean(next))
     setFocusRequest((value) => value + 1)
     setPlaying(false)
+    setReplayNotice('')
     setDemo(null)
     setLab(null)
   }
@@ -219,10 +238,11 @@ export function App() {
   }, [labRoute, lab?.route])
 
   useEffect(() => {
-    if (!playing || !data) return
-    const timer = window.setInterval(() => setIndex((value) => Math.min(data.times.length - 1, value + 1)), demo ? 360 : 155)
-    return () => window.clearInterval(timer)
-  }, [playing, data, demo])
+    if (!playing || !data || refreshing) return
+    // Give every loaded frame its full reading time, even on a slow connection.
+    const timer = window.setTimeout(() => setIndex((value) => Math.min(data.times.length - 1, value + 1)), replayDelay)
+    return () => window.clearTimeout(timer)
+  }, [playing, data, index, refreshing, replayDelay])
 
   useEffect(() => {
     if (!demo || !playing) return
@@ -240,10 +260,8 @@ export function App() {
   }, [data, index])
 
   function select(id: string | null, showDetails = true) {
-    if (demo && playing) {
-      setPlaying(false)
-      setDemo(null)
-    }
+    if (playing) setPlaying(false)
+    if (demo && playing) setDemo(null)
     setSelected(id)
     setInspectorOpen(showDetails && Boolean(id))
     setFocusRequest((value) => value + 1)
@@ -256,6 +274,7 @@ export function App() {
     labRequest.current = controller
     setPlaying(false)
     setError('')
+    setOpeningLab(true)
     try {
       const comparison = !demoPlan && planning?.scenario.system.id === systemId ? planning :
         await comparePlans(data, { at, systemId, demo: demoPlan }, controller.signal)
@@ -271,6 +290,8 @@ export function App() {
       if (demoPlan) setDemo(null)
     } catch (error) {
       if (!controller.signal.aborted) setError((error as Error).message)
+    } finally {
+      if (labRequest.current === controller) setOpeningLab(false)
     }
   }
 
@@ -306,6 +327,10 @@ export function App() {
       setDemo({ ...demo, stage: 'first-replay' })
       setPlaying(true)
     } else if (demo.stage === 'first-failure' && demo.first !== demo.last) {
+      // The operator has already inspected the first failure. Replay the short
+      // lead-up to the shared-fleet decision instead of racing through the gap.
+      const leadUp = data.times.findIndex((time) => time >= demo.last.detectedAt - 10 * 60)
+      setIndex(Math.max(index, leadUp))
       setDemo({ ...demo, stage: 'cluster-replay' })
       setSelected(demo.first.systemId)
       setInspectorOpen(false)
@@ -320,6 +345,7 @@ export function App() {
     setPlaying(false)
     setDemo(null)
     setIndex(value)
+    setReplayNotice('')
   }
 
   function replay(event: Incident) {
@@ -334,6 +360,32 @@ export function App() {
   function closeInspector() {
     setInspectorOpen(false)
     inspectorToggle.current?.focus()
+  }
+
+  function requestAccess() {
+    setPlaying(false)
+    if (account.current) {
+      account.current.open = true
+      account.current.querySelector<HTMLInputElement>('input')?.focus()
+    }
+  }
+
+  const priority = alerts.find((alert) => alert.assetId === selected && alert.verified) ?? verified[0]
+  const comparisonTarget = verified.find((alert) => alert.category === 'pump_failure' && alert.systemId === scope.systemId) ??
+    verified.find((alert) => alert.category === 'pump_failure')
+  const nextIncident = incidents.filter((incident) => incident.detectedAt > at).sort((a, b) => a.detectedAt - b.detectedAt)[0]
+
+  function reviewPriority(dispatch = false) {
+    if (!priority) return
+    select(priority.assetId)
+    window.requestAnimationFrame(() => {
+      const fold = document.querySelector<HTMLDetailsElement>('#asset-inspector ' + (dispatch ? '.workflow-fold' : '.evidence-fold'))
+      if (fold) {
+        fold.open = true
+        fold.scrollIntoView({ block: 'nearest' })
+        fold.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
+      }
+    })
   }
 
   const facility = scope.facilityId ? data?.facilities.get(scope.facilityId) : undefined
@@ -365,10 +417,13 @@ export function App() {
         {data && <span className="operator-time"><Clock3 size={14} /> <time dateTime={new Date(at * 1000).toISOString()}>{stamp(at)}</time></span>}
       </div>
       <div className="operator-actions"><ThemeToggle {...theme} /><a className="field-link" aria-label="Field desk" title="NIGHTWATCH Field" href="/field"><ClipboardList size={17} /><span>Field</span></a>
-        <details className="control-account">
-          <summary className="field-link" aria-label="Control-room account" title="Control-room account"><LockKeyhole size={16} /></summary>
-          <div>{workflow.person ? <><p>{workflow.person.name}</p><button className="small-btn" onClick={() => void workflow.signOut().catch((error) => setError(error.message))}>Sign out</button></> :
-            <SignIn label="Control-room code" configured={workflow.configured} onSignIn={workflow.signIn} />}</div>
+        <details className="control-account" ref={account}>
+          <summary className="field-link" aria-label="Control-room account" title="Control-room account"><LockKeyhole size={16} /><span>{workflow.person?.role === 'control' ? 'Control room' : workflow.person ? 'Field session' : 'Sign in'}</span></summary>
+          <div>{workflow.person ? <><p>{workflow.person.name}</p><p className="account-help">{workflow.person.role === 'control' ? 'This browser can approve assignments and run AI investigations.' : 'This browser is connected as a field engineer. Sign out to use control-room access.'}</p><button className="small-btn" onClick={() => void workflow.signOut().catch((error) => setError(error.message))}>Sign out</button></> : <>
+            <h3>Control-room access</h3><p className="account-help">Viewing evidence and Butterfly Effect needs no sign-in. Sign in once to use NVIDIA or approve field assignments.</p>
+            <SignIn label="Control-room code" configured={workflow.configured} onSignIn={workflow.signIn} />
+            <p className="account-help">For this local demo, use <code>NIGHTWATCH_CONTROL_CODE</code> from the server’s <code>.env.local</code>. This browser stays signed in for seven days.</p>
+          </>}</div>
         </details>
         <button className="soft-btn import-btn" onClick={() => input.current?.click()}><Upload size={15} /> <span>Import</span></button>
         <button className="primary-btn demo-btn" disabled={!data || Boolean(status)} onClick={() => void startDemo()}><Play size={13} fill="currentColor" /> Start Demo</button>
@@ -384,13 +439,23 @@ export function App() {
       {error && <div className="notice error-notice" role="alert"><CircleHelp size={16} /><span>{error}</span><button aria-label="Dismiss error" className="icon-btn" onClick={() => setError('')}><X size={15} /></button></div>}
       {data ? <>
         <OperationsStrip summary={current?.summary} onFocus={select} />
+        <section className="operator-next" aria-label="Operator actions">
+          <div><strong>{priority ? titleFor[priority.category] + ' · ' + priority.facilityId : 'Review the network'}</strong><span>{replayNotice || (at !== data.now ? 'Historical replay. Review evidence and compare responses; use Latest for field dispatch.' : priority ? 'Check the evidence, compare a response, then approve field work.' : 'Select equipment to inspect it, or replay a recorded incident from the alert queue.')}</span></div>
+          <div className="operator-next-buttons">
+            <button className="small-btn" disabled={!priority} onClick={() => reviewPriority()}>1 · Review alert</button>
+            <button className="primary-btn" disabled={!comparisonTarget || openingLab || refreshing} onClick={() => comparisonTarget && void openLab(comparisonTarget.systemId)}>{openingLab ? 'Opening comparison…' : '2 · Butterfly Effect'}</button>
+            <button className="small-btn" disabled={!priority} onClick={() => reviewPriority(true)}>3 · Send to Field</button>
+          </div>
+        </section>
         {demo && <div className="operator-demo">
           <span className="demo-kicker"><Play size={14} /> Guided demo</span>
           <strong>{demo.stage === 'intro' ? 'The shift begins with normal operations' : demo.stage === 'first-replay' || demo.stage === 'cluster-replay' ? 'Replaying recorded telemetry' : demo.stage === 'first-failure' ? 'A pump has failed' : 'Three failures are competing for one fleet'}</strong>
           {!playing && <button className="primary-btn" onClick={demoNext}>{demo.stage === 'intro' ? 'Replay the lead-up' : demo.stage === 'first-failure' && demo.first !== demo.last ? 'Show shared fleet pressure' : 'Compare responses'}<ArrowRight size={15} /></button>}
           <button className="icon-btn" aria-label="Exit demo" onClick={() => { setDemo(null); setPlaying(false) }}><X size={16} /></button>
         </div>}
-        <div className={'operator-console' + (inspectorOpen ? ' with-inspector' : '') + (queueCollapsed ? ' queue-collapsed' : '')}>
+        <div className={'operator-console' + (inspectorOpen ? ' with-inspector' : '') + (queueCollapsed ? ' queue-collapsed' : '')}
+          onPointerDownCapture={(event) => { if ((event.target as HTMLElement).closest('#asset-inspector')) setPlaying(false) }}
+          onFocusCapture={(event) => { if ((event.target as HTMLElement).closest('#asset-inspector')) setPlaying(false) }}>
           <AlertRail alerts={alerts} dismissed={dismissed} selected={selected} collapsed={queueCollapsed} loading={!current} recent={recent}
             onAlert={select} onReplay={replay} onToggle={() => setQueueCollapsed((value) => !value)} />
           <section className="operator-stage" aria-label="Water network">
@@ -410,7 +475,7 @@ export function App() {
               {elsewhere && system && <div className="stage-notice"><span>No active incidents in {system.id} · {verified.length} elsewhere</span><button onClick={() => select(elsewhere.assetId)}>Go to priority <ArrowRight size={13} /></button></div>}
             </div>
           </section>
-          {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={closeInspector} onBriefing={(alert, text) => setFieldDraft({ key: caseKey(caseFromAlert(data, alert, at)), text })} workflow={(alert, response) => {
+          {inspectorOpen && <Inspector data={data} at={at} selected={selected} alerts={alerts} planning={planning} onSelect={select} onLab={openLab} onClose={closeInspector} onRequestAccess={requestAccess} onBriefing={(alert, text) => setFieldDraft({ key: caseKey(caseFromAlert(data, alert, at)), text })} workflow={(alert, response) => {
             const incident = caseFromAlert(data, alert, at)
             const key = caseKey(incident)
             return <IncidentWorkflow key={key} incident={incident} entry={cases.get(key)} available={workflow.available} editable={editable} onUpdate={async (change) => {
@@ -433,13 +498,18 @@ export function App() {
           </button>
           <button className="icon-btn timeline-play" aria-label={playing ? 'Pause historical playback' : 'Play historical playback'} onClick={() => {
             setDemo(null)
+            setReplayNotice('')
             if (!playing && index >= data.times.length - 1) setIndex(0)
             setPlaying(!playing)
             setTimelineOpen(true)
           }}>{playing ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}</button>
-          <div className="timeline-track" id="recording-controls" hidden={!timelineOpen}><input type="range" aria-label="Recorded timestamp" aria-valuetext={stamp(at)} min="0" max={data.times.length - 1} value={index} onChange={(event) => scrub(+event.target.value)} /></div>
-          <span className="timeline-state"><span className="status-dot" />{at === data.now ? 'Latest recording' : 'Historical replay'}</span>
-          {at !== data.now && <button className="small-btn" onClick={() => scrub(data.times.length - 1)}>Latest</button>}
+          <select className="replay-speed" aria-label="Recorded playback speed" value={replayDelay} onChange={(event) => setReplayDelay(+event.target.value)}>
+            <option value={5000}>5 min / 5 sec</option><option value={1000}>5 min / 1 sec</option><option value={250}>5 min / 0.25 sec</option>
+          </select>
+          <div className="timeline-track" id="recording-controls" hidden={!timelineOpen}><input type="range" aria-label="Recorded timestamp" aria-valuetext={stamp(requestedAt)} min="0" max={data.times.length - 1} value={index} onChange={(event) => scrub(+event.target.value)} /></div>
+          <button className="small-btn" disabled={!nextIncident} onClick={() => nextIncident && replay(nextIncident)}>Next incident</button>
+          <span className="timeline-state"><span className="status-dot" /><span>{at === data.now ? 'Latest recording' : 'Historical replay'}</span><span className="timeline-refresh">{refreshing ? 'Updating…' : playing ? 'Playing' : 'Paused'}</span></span>
+          <button className="small-btn" disabled={at === data.now && !refreshing} onClick={() => scrub(data.times.length - 1)}>Latest</button>
         </section>
       </> : <section className="panel welcome"><div className="empty-glyph"><Database size={26} /></div><h2>Load a network</h2><p>Select the three EOG files together to build the network and analyze its recorded telemetry.</p><button className="primary-btn" onClick={() => input.current?.click()}><Upload size={15} /> Import dataset</button></section>}
     </main>

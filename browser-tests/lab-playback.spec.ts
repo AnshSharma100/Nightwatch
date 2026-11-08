@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 const snapshot = '/decision-lab?recording=practice-snapshot_2026-10-10T0900&system=S4&at=' + Date.parse('2026-10-10T09:00:00Z') / 1000
 
 test('Butterfly Effect waits for decisions, advances at a readable speed, and pauses for editing', async ({ page }) => {
+  await page.clock.install({ time: new Date('2026-11-08T12:00:00Z') })
   await page.goto(snapshot)
   const lab = page.getByRole('main', { name: 'Decision Lab' })
   await expect(lab.getByRole('heading', { name: 'Butterfly Effect' })).toBeVisible()
@@ -10,7 +11,7 @@ test('Butterfly Effect waits for decisions, advances at a readable speed, and pa
   const play = lab.getByRole('button', { name: 'Play simulation' })
   await expect(play).toBeVisible()
   await expect(playhead).toHaveValue('0')
-  await page.clock.install()
+  await page.clock.pauseAt(new Date('2026-11-08T13:00:00Z'))
   await page.clock.runFor(3000)
   await expect(playhead).toHaveValue('0')
   const bounds = await lab.locator('.lab-stage').boundingBox()
