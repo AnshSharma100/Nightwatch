@@ -7,6 +7,8 @@ const api = 'http://127.0.0.1:4174'
 const env = {
   NIGHTWATCH_CONTROL_CODE: 'playwright-control-code',
   NVIDIA_API_KEY: '',
+  NIGHTWATCH_API_ORIGIN: '',
+  NIGHTWATCH_PUBLIC_ORIGIN: '',
   VAPID_PUBLIC_KEY: keys.publicKey,
   VAPID_PRIVATE_KEY: keys.privateKey,
   VAPID_SUBJECT: 'mailto:field@example.test',

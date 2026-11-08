@@ -114,13 +114,14 @@ export function FieldDesk({ assignmentId }: { assignmentId?: string }) {
     <main>
       {signOutError && <p className="form-error" role="alert">{signOutError}</p>}
       {!person ? <section className="field-welcome"><span className="field-welcome-icon"><Radio size={22} /></span><h2>{assignmentId ? 'Connect to open your assignment' : 'Connect your field device'}</h2>
-        <p>The control room connects this device to your field identity so only your assignments reach you. Connect once; this browser remembers you for seven days.</p>
+        <p>Your laptop stays signed in as control room. This phone connects separately as a field engineer and remembers you for seven days.</p>
         {connectionCode !== null ? <div className="field-connect">
           <p>Use the link shared by the control room within 15 minutes, on the device you will take into the field.</p>
           {connectionCode ? <button className="primary-btn" disabled={connecting || workflow.configured !== true} onClick={() => void connectDevice()}>
             {connecting ? 'Connecting…' : 'Connect this device'}</button> : <p className="form-error" role="alert">This connection link is invalid. Ask the control room for a new link.</p>}
           {connectionError && <p className="form-error" role="alert">{connectionError} Ask the control room for a new connection link if this one has expired.</p>}
-        </div> : <p>Ask the operator to select your site, open <strong>Send to Field</strong>, and choose <strong>Connect a field device</strong>. Open that connection link here.</p>}
+        </div> : <><p>On your laptop, select an incident → <strong>Send to Field</strong> → <strong>Begin review</strong> → <strong>Create connection link</strong>.</p>
+          <p>Scan the QR with this phone’s camera, or open the copied link here. You do not need the control-room code on your phone.</p></>}
         <ol className="field-onboarding"><li>Connect this device once.</li><li>Clock in and enable phone notifications.</li><li>Open your approved assignment and acknowledge it.</li></ol>
         <details className="field-code-fallback"><summary>Have a one-time code instead?</summary><SignIn label="Field sign-in code" configured={workflow.configured} onSignIn={async (code) => { await workflow.signIn(code); setConnectionCode(null) }} /></details>
         <p className="field-demo-note">Demonstration personnel only. No employee account or password is required.</p>

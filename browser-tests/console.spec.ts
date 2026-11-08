@@ -134,8 +134,7 @@ test('dispatches to a clocked-in device, opens the assignment link, and syncs pr
   await expect(workflow.getByRole('button', { name: 'Begin review' })).toBeVisible()
   expect((await page.request.post('/api/nemotron', { data: {} })).status()).toBe(503)
   await workflow.getByRole('button', { name: 'Begin review' }).click()
-  const enrollment = workflow.getByText('Connect a field device', { exact: true })
-  await enrollment.click()
+  await expect(workflow.getByRole('region', { name: 'Connect a field device' })).toBeVisible()
   async function enroll(role: 'foreman' | 'lease') {
     await workflow.getByLabel('Synthetic account').selectOption(role)
     await workflow.getByRole('button', { name: 'Create connection link' }).click()

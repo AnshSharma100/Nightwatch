@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import QRCode from 'qrcode'
 import { BadgeCheck, ClipboardList, Copy } from 'lucide-react'
 import { actionLabel, assigneeName, availableActions, caseKey, stageLabel } from '../../packages/domain/workflow.ts'
 import type { Action, Actor, WorkflowCase, WorkflowEntry, WorkflowUpdate } from '../../packages/domain/workflow.ts'
@@ -87,14 +88,24 @@ export function WorkflowHistory({ entry }: { entry: WorkflowEntry }) {
 
 function Enrollment({ incident }: { incident: WorkflowCase }) {
   const [role, setRole] = useState<'foreman' | 'lease'>('lease')
-  const [invite, setInvite] = useState<{ code: string; person: Person } | null>(null)
+  const [invite, setInvite] = useState<{ code: string; person: Person; publicOrigin?: string | null } | null>(null)
+  const [qr, setQr] = useState('')
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
   const [copied, setCopied] = useState(false)
-  const connectionLink = invite ? window.location.origin + '/field#invite=' + encodeURIComponent(invite.code) : ''
-  return <details className="workflow-history"><summary>Connect a field device</summary>
+  const connectionLink = invite ? (invite.publicOrigin || window.location.origin) + '/field#invite=' + encodeURIComponent(invite.code) : ''
+  const phoneReachable = connectionLink && new URL(connectionLink).protocol === 'https:' && !['localhost', '127.0.0.1', '[::1]'].includes(new URL(connectionLink).hostname)
+  useEffect(() => {
+    let active = true
+    setQr('')
+    if (phoneReachable) void QRCode.toDataURL(connectionLink, { width: 240, margin: 4, errorCorrectionLevel: 'M' })
+      .then((value) => { if (active) setQr(value) }).catch(() => { if (active) setError('QR code unavailable. Copy the connection link instead.') })
+    return () => { active = false }
+  }, [connectionLink, phoneReachable])
+  return <section className="field-connection" aria-label="Connect a field device">
+    <h4>Connect a field device</h4>
     <div className="workflow-actions">
-      <p>Do this once for each engineer’s browser or phone. The link connects a synthetic demo identity to its assigned work; the device stays signed in for seven days.</p>
+      <p>Keep this laptop signed in as control room. Connect your phone separately as the engineer, once. No control-room code is needed on the phone.</p>
       <label>Synthetic account<select value={role} onChange={(event) => { setRole(event.target.value as 'foreman' | 'lease'); setInvite(null); setCopied(false) }}>
         <option value="foreman">{personFor(incident, 'foreman').name}</option><option value="lease">{personFor(incident, 'lease').name}</option>
       </select></label>
@@ -107,6 +118,8 @@ function Enrollment({ incident }: { incident: WorkflowCase }) {
         finally { setWorking(false) }
       }}>Create connection link</button></div>
       {invite && <div className="field-invite">
+        {qr && <><p><strong>Scan with your phone’s camera</strong></p><img className="field-connection-qr" src={qr} alt="Scan to connect this phone as the selected field engineer" width={240} height={240} /></>}
+        {!phoneReachable && <p role="status">This address only supports local browser testing. Set the server’s public HTTPS address to connect a separate phone.</p>}
         <label>Field connection link<input readOnly value={connectionLink} onFocus={(event) => event.target.select()} /></label>
         <button className="small-btn" onClick={async () => {
           try {
@@ -116,13 +129,13 @@ function Enrollment({ incident }: { incident: WorkflowCase }) {
             setError('')
           } catch { setError('Select and copy the connection link above.') }
         }}><Copy size={13} /> {copied ? 'Link copied' : 'Copy connection link'}</button>
-        <p>Open this link on the engineer’s device within 15 minutes. Tap <strong>Connect this device</strong>, then <strong>Clock in</strong> and <strong>Enable notifications</strong>.</p>
-        <p>Connects {invite.person.name}. Share only with the intended engineer. For a phone, use the shared HTTPS address for both devices.</p>
+        <ol className="field-connection-steps"><li>Scan the QR or open the copied link on your phone within 15 minutes.</li><li>Tap <strong>Connect this device</strong>, then <strong>Clock in</strong>.</li><li>Tap <strong>Enable notifications</strong> and allow them. On iPhone, open the app from the Home Screen first.</li><li>Back here, confirm the incident, choose this engineer and send the assignment.</li></ol>
+        <p>Connects {invite.person.name}. This one-use link belongs only to the intended engineer. It does not sign the laptop out.</p>
         <details><summary>Use a one-time code instead</summary><code>{invite.code}</code><p>Open /field in a separate browser profile or on the phone, then choose “Have a one-time code instead?”</p></details>
       </div>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </div>
-  </details>
+  </section>
 }
 
 export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft }: {
@@ -140,7 +153,7 @@ export function IncidentWorkflow({ incident, entry, available, editable, onUpdat
       {person?.role === 'control' ? <>
         {editable && available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} /> :
           <p>{!editable ? 'Review and assignment are available at the latest recording.' : available === false ? 'Workflow server unavailable.' : 'Connecting to the workflow server…'}</p>}
-        {entry && <Enrollment incident={incident} />}
+        {entry ? <Enrollment incident={incident} /> : <p className="field-connection-hint">Connecting your phone? Tap <strong>Begin review</strong> above. The phone connection QR and link will appear here.</p>}
       </> : person ? <p>Sign out of the field account to use control-room tools.</p> : <>
         <p>Control-room sign-in identifies who approves field work. Sign in once; this browser remembers you for seven days.</p>
         <SignIn label="Control-room code" configured={configured} onSignIn={onSignIn} /></>}

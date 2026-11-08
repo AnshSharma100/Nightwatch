@@ -92,7 +92,7 @@ export function workflowHandler(store: WorkspaceStore, auth: SessionAuth, push: 
       const input = await requestBody(request, 8192, publicOrigin) as { key?: string; role?: unknown } | null
       const entry = (await store.read()).entries.find((item) => caseKey(item.incident) === input?.key)
       if (!entry || (input?.role !== 'foreman' && input?.role !== 'lease')) { send(response, 400, { error: 'Select a reviewed incident and a field role.' }); return }
-      send(response, 200, await auth.invite(entry.incident, input.role))
+      send(response, 200, { ...await auth.invite(entry.incident, input.role), publicOrigin: publicOrigin ?? null })
       return
     }
     const detail = /^\/api\/workflow\/assignments\/([0-9a-f-]{36})$/.exec(pathname)

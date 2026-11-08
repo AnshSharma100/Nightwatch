@@ -147,6 +147,8 @@
   .investigator-form label { display: grid; gap: 4px; }
   .investigator-buttons { display: flex; flex-wrap: wrap; gap: 5px; }
   .investigator-form .investigator-answer { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
+  .investigator-form section[aria-label="Investigation answer"] h4 { font-size: 13px; line-height: 1.5; margin: 6px 0; }
+  .investigator-form .investigator-answer + .investigator-answer { margin-top: 10px; }
   .investigator-outcomes { border-top: 1px solid var(--line); padding-top: 6px; }
   .investigator-outcomes h4 { margin-bottom: 3px; font-size: 12px; }
   .investigator-trace summary { cursor: pointer; color: var(--teal); font-size: 12px; }
@@ -165,6 +167,10 @@
   .field-invite { overflow-wrap: anywhere; }
   .field-invite > label { display: grid; gap: 5px; width: 100%; min-width: 0; }
   .field-invite input { width: 100%; min-width: 0; }
+  .field-connection { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 12px; }
+  .field-connection h4 { font-size: 13px; margin-bottom: 6px; }
+  .field-connection-qr { display: block; width: 240px; max-width: 100%; height: auto; margin: 8px auto; border-radius: 6px; }
+  .field-connection-steps { padding-left: 18px; font-size: 12px; line-height: 1.6; }
   .delivery-state, .assignment-approved { background: var(--tint); border-radius: 4px; padding: 7px; }
 
   .operator-timeline { display: flex; gap: 9px; align-items: center; min-height: 43px; padding: 5px 13px; background: var(--surface); border-top: 1px solid var(--line); }
