@@ -13,6 +13,17 @@ import './field.css'
 
 const fieldUrl = '/field'
 
+// Keep the one-time credential out of page URLs, history and subsequent requests.
+function takeConnectionLink() {
+  const fragment = new URLSearchParams(window.location.hash.slice(1))
+  const code = fragment.get('invite')
+  if (code === null) return null
+  fragment.delete('invite')
+  const remaining = fragment.toString()
+  window.history.replaceState(window.history.state, '', window.location.pathname + window.location.search + (remaining ? '#' + remaining : ''))
+  return /^[A-Za-z0-9_-]{32}$/.test(code) ? code : ''
+}
+
 function urgent(entry: WorkflowEntry) {
   const { category, forecastMin, repairMin, automatic } = entry.incident
   return category === 'pipeline_leak' || (category === 'pump_failure' &&
@@ -59,6 +70,9 @@ function AssignmentDetails({ entry, workflow }: { entry: WorkflowEntry; workflow
 }
 
 export function FieldDesk({ assignmentId }: { assignmentId?: string }) {
+  const [connectionCode, setConnectionCode] = useState(takeConnectionLink)
+  const [connecting, setConnecting] = useState(false)
+  const [connectionError, setConnectionError] = useState('')
   const workflow = useWorkflow(assignmentId)
   const theme = useTheme()
   const [signOutError, setSignOutError] = useState('')
@@ -70,6 +84,15 @@ export function FieldDesk({ assignmentId }: { assignmentId?: string }) {
     { label: 'Acknowledged and in progress', entries: assigned.filter((entry) => entry.stage === 'acknowledged' || entry.stage === 'in_progress') },
     { label: 'Completed', entries: assigned.filter((entry) => entry.stage === 'resolved') },
   ]
+
+  async function connectDevice() {
+    if (!connectionCode) return
+    setConnecting(true)
+    setConnectionError('')
+    try { await workflow.signIn(connectionCode); setConnectionCode(null) }
+    catch (error) { setConnectionError((error as Error).message) }
+    finally { setConnecting(false) }
+  }
 
   useEffect(() => {
     document.title = 'NIGHTWATCH Field'
@@ -90,21 +113,32 @@ export function FieldDesk({ assignmentId }: { assignmentId?: string }) {
           <a className="soft-btn field-control-link" aria-label="Control room" href="/"><ArrowLeft size={15} /><span>Control room</span></a>}</div></header>
     <main>
       {signOutError && <p className="form-error" role="alert">{signOutError}</p>}
-      {!person ? <section className="field-welcome"><span className="field-welcome-icon"><Radio size={22} /></span><h2>{assignmentId ? 'Sign in to open this assignment' : 'Field sign-in'}</h2>
-        <p>Use the one-time code from the control room. Accounts represent synthetic demo personnel.</p>
-        <SignIn label="Field sign-in code" configured={workflow.configured} onSignIn={workflow.signIn} />
+      {!person ? <section className="field-welcome"><span className="field-welcome-icon"><Radio size={22} /></span><h2>{assignmentId ? 'Connect to open your assignment' : 'Connect your field device'}</h2>
+        <p>The control room connects this device to your field identity so only your assignments reach you. Connect once; this browser remembers you for seven days.</p>
+        {connectionCode !== null ? <div className="field-connect">
+          <p>Use the link shared by the control room within 15 minutes, on the device you will take into the field.</p>
+          {connectionCode ? <button className="primary-btn" disabled={connecting || workflow.configured !== true} onClick={() => void connectDevice()}>
+            {connecting ? 'Connecting…' : 'Connect this device'}</button> : <p className="form-error" role="alert">This connection link is invalid. Ask the control room for a new link.</p>}
+          {connectionError && <p className="form-error" role="alert">{connectionError} Ask the control room for a new connection link if this one has expired.</p>}
+        </div> : <p>Ask the operator to select your site, open <strong>Send to Field</strong>, and choose <strong>Connect a field device</strong>. Open that connection link here.</p>}
+        <ol className="field-onboarding"><li>Connect this device once.</li><li>Clock in and enable phone notifications.</li><li>Open your approved assignment and acknowledge it.</li></ol>
+        <details className="field-code-fallback"><summary>Have a one-time code instead?</summary><SignIn label="Field sign-in code" configured={workflow.configured} onSignIn={async (code) => { await workflow.signIn(code); setConnectionCode(null) }} /></details>
+        <p className="field-demo-note">Demonstration personnel only. No employee account or password is required.</p>
+        {workflow.configured === false && <p role="alert">The control room has not enabled field connections yet. Ask the operator to finish field setup.</p>}
         {available === false && <p role="alert">The workflow server is unavailable.</p>}</section> : person.role === 'control' ?
-        <p className="field-empty">Sign out of the control room and enter a field sign-in code on this device.</p> :
+        <section className="field-welcome"><h2>This browser is the control room</h2><p>Open the field connection link on the engineer’s phone or a separate browser profile. That keeps the operator and engineer signed in at the same time.</p>
+          <p>To use this browser as the field device instead, sign out above and open the connection link.</p><a className="soft-btn field-back" href="/">Return to control room</a></section> :
         <>
           {!assignmentId && <p className="field-account">{person.name} <span className="tag">Synthetic demo</span></p>}
+          {connectionCode !== null && <p className="field-empty">This browser is already connected as {person.name}. To use a different field identity, sign out and connect with the new link.</p>}
           {loadError && <p className="form-error" role="alert">{loadError} {assignmentId && <a href={fieldUrl}>My assignments</a>}</p>}
           {assignmentId ? assigned[0] && <AssignmentDetails entry={assigned[0]} workflow={workflow} /> : <>
             <FieldShift />
+            <FieldPush />
             <h2 className="inbox-title"><ClipboardList size={19} /> My assignments</h2>
-            {available === true && !assigned.length && <p className="field-empty">No approved assignments in your scope.</p>}
+            {available === true && !assigned.length && <p className="field-empty">No approved assignments yet. After you clock in, the operator can select you and send a confirmed assignment here.</p>}
             {groups.map((group) => group.entries.length > 0 && <section key={group.label} className="field-inbox-group"><h3>{group.label}</h3>
               {group.entries.map((entry) => <AssignmentCard key={entry.assignment!.id} entry={entry} />)}</section>)}
-            <FieldPush />
           </>}
         </>}
     </main>

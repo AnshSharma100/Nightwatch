@@ -15,6 +15,7 @@ export function FieldPush() {
   const [registration, setRegistration] = useState<ServiceWorkerRegistration | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const [permission, setPermission] = useState<NotificationPermission | null>(() => 'Notification' in window ? Notification.permission : null)
   const supported = window.isSecureContext && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
 
   useEffect(() => {
@@ -35,7 +36,8 @@ export function FieldPush() {
     setNotice('')
     try {
       const permission = Notification.permission === 'default' ? await Notification.requestPermission() : Notification.permission
-      if (permission !== 'granted') { setNotice('Notifications are off. You can enable permission in your device settings.'); return }
+      setPermission(permission)
+      if (permission !== 'granted') { setNotice('Notifications are off. You can enable permission in your device settings. Your assignments remain available below.'); return }
       const key = keyBytes(config.publicKey)
       let subscription = await registration.pushManager.getSubscription()
       const existingKey = subscription?.options.applicationServerKey
@@ -64,12 +66,23 @@ export function FieldPush() {
     finally { setBusy(false) }
   }
 
-  return <details className="field-notifications">
-    <summary><Bell size={17} /> Notifications <span>{config?.registered ? 'Enabled' : 'Optional'}</span></summary>
-    <p>{!supported ? 'Use HTTPS and a supported browser. On iPhone, add this page to your Home Screen and open it there.' :
-      config && !config.publicKey ? 'The server has not configured Web Push.' : 'Subscribe this device to approved assignments for your signed-in account.'}</p>
+  const enabled = config?.registered && permission === 'granted'
+  const status = enabled ? 'Enabled on this device' : permission === 'denied' ? 'Blocked in device settings' : !supported ? 'Unavailable in this browser' :
+    config && !config.publicKey ? 'Not set up on this server' : config ? 'Not enabled yet' : notice ? 'Setup unavailable' : 'Checking this device…'
+  return <section className="field-notifications" aria-label="Phone notifications">
+    <div className="field-notifications-heading"><Bell size={18} /><h3>Phone notifications</h3><span>{status}</span></div>
+    <p>{enabled ? 'Approved assignments can alert this device while the app is closed. Open an alert, review the assignment, then tap Acknowledge.' :
+      !supported ? 'Your inbox works here. For background phone alerts, use the shared HTTPS address in a supported browser. On iPhone, add NIGHTWATCH Field to your Home Screen and open it there.' :
+      config && !config.publicKey ? 'The operator needs to finish notification setup. Approved assignments still appear in your inbox.' :
+      'Enable alerts on this device, then allow notifications when asked. Only assignments approved for you can send a phone alert.'}</p>
     {supported && config?.publicKey && <button className="small-btn" disabled={busy || !registration} onClick={() => void (config.registered ? disable() : enable())}>
       {config.registered ? 'Disable notifications' : 'Enable notifications'}</button>}
+    <details className="field-notification-help"><summary>How does the phone get an assignment?</summary><ol>
+      <li>You clock in and allow notifications on this device.</li><li>The operator reviews an incident, selects you, and presses Send to Field.</li>
+      <li>A phone alert opens the current assignment. Your acknowledgment tells the control room you received it.</li>
+    </ol><p>If a phone alert does not arrive, open My assignments here. An accepted push request alone does not mean you have read it.</p>
+      <p>For a separate phone, both devices must use the same reachable HTTPS address. A phone’s 127.0.0.1 address does not reach the laptop.</p>
+    </details>
     {notice && <p role="status">{notice}</p>}
-  </details>
+  </section>
 }

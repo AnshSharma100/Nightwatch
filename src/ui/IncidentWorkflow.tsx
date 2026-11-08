@@ -64,7 +64,7 @@ export function WorkflowActions({ actor, incident, entry, onUpdate, response, dr
         </option>)}
       </select></label>
       {!roster ? <p>Checking the shift roster…</p> : roster.error ? <p className="form-error" role="alert">{roster.error}</p> :
-        !roster.engineers.some(({ shift }) => shift.status === 'available') && <p>No available engineers cover this site. Enroll a device below, then clock in on that device.</p>}
+        !roster.engineers.some(({ shift }) => shift.status === 'available') && <p>No available engineers cover this site. Connect a field device below, then have the engineer clock in on it.</p>}
       {response && <p className="assignment-approved">{response}</p>}
       {draft && <div><button className="small-btn" disabled={pending} onClick={() => setNote(draft.slice(0, 500))}>Use AI draft</button></div>}
     </>}
@@ -90,20 +90,36 @@ function Enrollment({ incident }: { incident: WorkflowCase }) {
   const [invite, setInvite] = useState<{ code: string; person: Person } | null>(null)
   const [error, setError] = useState('')
   const [working, setWorking] = useState(false)
-  return <details className="workflow-history"><summary>Enroll a demo field device</summary>
+  const [copied, setCopied] = useState(false)
+  const connectionLink = invite ? window.location.origin + '/field#invite=' + encodeURIComponent(invite.code) : ''
+  return <details className="workflow-history"><summary>Connect a field device</summary>
     <div className="workflow-actions">
-      <label>Synthetic account<select value={role} onChange={(event) => { setRole(event.target.value as 'foreman' | 'lease'); setInvite(null) }}>
+      <p>Do this once for each engineer’s browser or phone. The link connects a synthetic demo identity to its assigned work; the device stays signed in for seven days.</p>
+      <label>Synthetic account<select value={role} onChange={(event) => { setRole(event.target.value as 'foreman' | 'lease'); setInvite(null); setCopied(false) }}>
         <option value="foreman">{personFor(incident, 'foreman').name}</option><option value="lease">{personFor(incident, 'lease').name}</option>
       </select></label>
       <div><button className="small-btn" disabled={working} onClick={async () => {
         setWorking(true)
         setError('')
+        setCopied(false)
         try { setInvite(await workflowJson('/api/workflow/invite', jsonRequest({ key: caseKey(incident), role }))) }
         catch (error) { setError((error as Error).message) }
         finally { setWorking(false) }
-      }}>Create one-time code</button></div>
-      {invite && <div className="field-invite"><code>{invite.code}</code><button className="small-btn" onClick={() => void navigator.clipboard?.writeText(invite.code).catch(() => {})}><Copy size={13} /> Copy</button>
-        <p>Enter this code on the field device within 15 minutes. It signs in {invite.person.name}.</p></div>}
+      }}>Create connection link</button></div>
+      {invite && <div className="field-invite">
+        <label>Field connection link<input readOnly value={connectionLink} onFocus={(event) => event.target.select()} /></label>
+        <button className="small-btn" onClick={async () => {
+          try {
+            if (!navigator.clipboard) throw new Error('Select and copy the connection link above.')
+            await navigator.clipboard.writeText(connectionLink)
+            setCopied(true)
+            setError('')
+          } catch { setError('Select and copy the connection link above.') }
+        }}><Copy size={13} /> {copied ? 'Link copied' : 'Copy connection link'}</button>
+        <p>Open this link on the engineer’s device within 15 minutes. Tap <strong>Connect this device</strong>, then <strong>Clock in</strong> and <strong>Enable notifications</strong>.</p>
+        <p>Connects {invite.person.name}. Share only with the intended engineer. For a phone, use the shared HTTPS address for both devices.</p>
+        <details><summary>Use a one-time code instead</summary><code>{invite.code}</code><p>Open /field in a separate browser profile or on the phone, then choose “Have a one-time code instead?”</p></details>
+      </div>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </div>
   </details>
@@ -116,16 +132,18 @@ export function IncidentWorkflow({ incident, entry, available, editable, onUpdat
 }) {
   const delivery = entry?.assignment?.delivery
   return <details className="inspector-fold workflow-fold">
-    <summary><ClipboardList size={15} /> Incident workflow <span className="tag">{stageLabel[entry?.stage ?? 'detected']}</span></summary>
+    <summary><ClipboardList size={15} /> Send to Field <span className="tag">{stageLabel[entry?.stage ?? 'detected']}</span></summary>
     <div className="inspector-section">
+      {!entry?.assignment && <p>Review and confirm the incident, choose a clocked-in engineer, then send the approved instructions. Detection and confirmation alone never send a phone alert.</p>}
       {entry?.assignment && <><p><BadgeCheck size={14} /> {entry.assignment.recipient.name}</p>
         {delivery && <p className="delivery-state">{deliveryLabel[delivery.status]}{delivery.failed > 0 ? ' · ' + delivery.failed + ' device request(s) failed' : ''}</p>}</>}
       {person?.role === 'control' ? <>
         {editable && available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} /> :
           <p>{!editable ? 'Review and assignment are available at the latest recording.' : available === false ? 'Workflow server unavailable.' : 'Connecting to the workflow server…'}</p>}
         {entry && <Enrollment incident={incident} />}
-      </> : person ? <p>Sign out of the field account to use control-room tools.</p> :
-        <SignIn label="Control-room code" configured={configured} onSignIn={onSignIn} />}
+      </> : person ? <p>Sign out of the field account to use control-room tools.</p> : <>
+        <p>Control-room sign-in identifies who approves field work. Sign in once; this browser remembers you for seven days.</p>
+        <SignIn label="Control-room code" configured={configured} onSignIn={onSignIn} /></>}
       {entry && <WorkflowHistory entry={entry} />}
       {person && <button className="small-btn" onClick={() => void onSignOut().catch(() => {})}>Sign out</button>}
     </div>

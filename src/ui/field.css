@@ -18,6 +18,11 @@
   .field-welcome-icon { display: grid; place-items: center; width: 42px; height: 42px; border-radius: 7px; background: var(--tint); color: var(--teal); }
   .field-welcome h2 { margin: 12px 0 5px; }
   .field-welcome p, .field-notifications p, .field-account, .field-detail p, .field-detail li { color: var(--muted); font-size: 14px; line-height: 1.55; }
+  .field-welcome p + p, .field-connect, .field-onboarding { margin-top: 12px; }
+  .field-onboarding, .field-notification-help ol { padding-left: 22px; color: var(--muted); font-size: 14px; line-height: 1.65; }
+  .field-code-fallback { margin-top: 15px; border-top: 1px solid var(--line); }
+  .field-code-fallback summary, .field-notification-help summary { display: flex; align-items: center; color: var(--teal); cursor: pointer; font-size: 14px; }
+  .field-welcome .field-demo-note { font-size: 12px; }
   .field-account { display: flex; align-items: center; justify-content: space-between; gap: 6px; flex-wrap: wrap; margin-bottom: 9px; }
   .field-sign-in { max-width: 440px; margin-top: 9px; }
   .field-sign-in input, .field-detail .workflow-actions textarea { font-size: 16px; }
@@ -42,9 +47,11 @@
   .field-job p { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; font-size: 14px; color: var(--muted); }
   .field-job footer { margin-top: 8px; color: var(--teal); font-size: 12px; }
   .field-urgent { margin-left: 7px; color: var(--coral); font-size: 12px; }
-  .field-notifications { border-block: 1px solid var(--line); margin: 12px 0 15px; }
-  .field-notifications summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px; }
-  .field-notifications summary span { margin-left: auto; color: var(--teal); font-size: 12px; }
+  .field-notifications { border-block: 1px solid var(--line); margin: 12px 0 19px; padding-block: 12px; }
+  .field-notifications-heading { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 7px; }
+  .field-notifications-heading h3 { font-size: 15px; }
+  .field-notifications-heading > svg { color: var(--teal); }
+  .field-notifications-heading > span { margin-left: auto; color: var(--teal); font-size: 12px; }
   .field-notifications p, .field-notifications button { margin-bottom: 8px; }
   .field-back { display: inline-flex; align-items: center; gap: 6px; color: var(--teal); font-weight: 650; }
   .field-detail h2 { margin-block: 3px 5px; }
