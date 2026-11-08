@@ -11,3 +11,6 @@ public/practice/
 PRODUCT_SPEC.md
 SPONSOR_NOTES.md
 CODEX_MASTER_PROMPT.md
+
+playwright-report/
+test-results/

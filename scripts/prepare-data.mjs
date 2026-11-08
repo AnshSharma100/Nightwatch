@@ -14,7 +14,7 @@ const files = ['network.json', 'ops.json', 'telemetry.csv']
 const names = readdirSync(history, { withFileTypes: true })
   .filter((entry) => entry.isDirectory() && files.every((file) => existsSync(join(history, entry.name, file))))
   .map((entry) => entry.name)
-if (existsSync(join(source, 'test', 'telemetry.csv'))) names.push('test')
+if (files.every((file) => existsSync(join(source, 'test', file)))) names.push('test')
 for (const name of names) {
   const from = name === 'test' ? join(source, 'test') : join(history, name)
   const to = join(destination, name)
