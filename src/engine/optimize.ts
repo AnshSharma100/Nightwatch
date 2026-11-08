@@ -36,7 +36,15 @@ function bestLocal(scenario: Scenario, failure: Failure, arrivals: number[], gro
   return best
 }
 
-export function optimize(scenario: Scenario): { baseline: Outcome; best: Outcome; alternative: Outcome | null; evaluated: number; limited: boolean } {
+export interface Optimization {
+  baseline: Outcome
+  best: Outcome
+  alternative: Outcome | null
+  evaluated: number
+  limited: boolean
+}
+
+export function optimize(scenario: Scenario): Optimization {
   const baseline = simulate(scenario, noAction)
   const ranked: Candidate[] = [{ plan: noAction, cost: baseline.costs.total }]
   const candidates = new Set<string>([JSON.stringify(noAction)])
@@ -59,7 +67,8 @@ export function optimize(scenario: Scenario): { baseline: Outcome; best: Outcome
       cost += local.cost
       plan.shutIns.push(...local.shutIns)
     }
-    const key = JSON.stringify(plan)
+    const assignments = plan.jobs.map(({ facilityId, dispatchMin, trips }) => JSON.stringify([facilityId, dispatchMin, trips])).sort()
+    const key = plan.jobs.length || plan.shutIns.length ? JSON.stringify([assignments, plan.shutIns]) : JSON.stringify(noAction)
     if (candidates.has(key)) return
     candidates.add(key)
     ranked.push({ plan, cost })

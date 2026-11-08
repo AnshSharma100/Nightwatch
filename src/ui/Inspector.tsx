@@ -45,6 +45,8 @@ export function Inspector({ data, at, selected, alerts, onSelect, onFocus, onLab
     (asset?.kind === 'facility' ? alerts.find((item) => item.facilityId === asset.facilityId) : undefined)
   const fill = facility ? read(data, facility.tank.id, 'level_pct', at) : undefined
   const state = facility ? read(data, facility.pump.id, 'status', at) : undefined
+  const configuredInflow = facility?.wells.reduce((sum, well) => sum + well.baselineWaterBpd, 0)
+  const headroom = facility && fill !== undefined ? Math.max(0, data.shutdownPct - fill) / 100 * facility.tank.capacityBbl : undefined
   const well = facility?.wells.find((well) => well.id === selected)
   const failures = system ? alerts.filter((item) => item.systemId === system.id && item.category === 'pump_failure') : []
   return <aside className="panel inspector" aria-label="Asset inspector">
@@ -63,9 +65,11 @@ export function Inspector({ data, at, selected, alerts, onSelect, onFocus, onLab
           {alert.category === 'pump_failure' ? <div className="forecast">
             <div><Clock3 size={14} /><span>{alert.automatic ? 'Automatic shut-in' : 'To shutdown limit'}</span><strong>{alert.automatic ? 'Latched' : duration(alert.minutesToLimit)}</strong></div>
             <div><span>Repair remaining</span><strong>{duration(alert.repairMinutes)}</strong></div>
+            {!alert.automatic && headroom !== undefined && <div><span>{number(headroom)} bbl headroom</span><strong>{number(configuredInflow)} bbl/day</strong></div>}
             <p>{alert.automatic ? 'The wells stay shut until repair.' : 'Headroom ÷ configured well water production, with pump flow at zero.'}</p>
           </div> : <p className="inspection-action">Response · Field inspection{alert.category === 'pipeline_leak' ? ' now' : ''}</p>}
         </section>}
+        {system && failures.length > 0 && <section className="inspector-section lab-action"><button className="primary-btn" onClick={() => onLab(system.id)}>Open Decision Lab <ArrowUpRight size={15} /></button><p>{failures.length} failed {failures.length === 1 ? 'pump' : 'pumps'} · {system.fleetSize} shared trucks</p></section>}
         {facility && <section className="inspector-section">
           <h3><Waves size={14} /> Facility conditions <span className="tag">Recorded</span></h3>
           <div className="sensor-current"><span>Tank fill</span><strong>{number(fill)}{fill === undefined ? '' : '%'}</strong></div>
@@ -84,7 +88,6 @@ export function Inspector({ data, at, selected, alerts, onSelect, onFocus, onLab
           {system.facilities.map((item) => <button key={item.id} className="asset-link" onClick={() => onFocus(item.id)}>{item.id}<ChevronRight size={13} /></button>)}
         </section>}
         <SensorTrend key={asset.id} data={data} at={at} asset={asset} />
-        {system && failures.length > 0 && <section className="inspector-section lab-action"><button className="primary-btn" onClick={() => onLab(system.id)}>Open Decision Lab <ArrowUpRight size={15} /></button><p>{failures.length} failed {failures.length === 1 ? 'pump' : 'pumps'} · {system.fleetSize} shared trucks</p></section>}
         {facility && <section className="inspector-section"><h3>Connected equipment</h3>
           {[facility.tank.id, facility.pump.id, facility.pipeline.id, ...facility.wells.map((well) => well.id)].filter((id) => id !== selected).map((id) =>
             <button className="asset-link" key={id} onClick={() => onSelect(id)}>{id}<ChevronRight size={13} /></button>)}

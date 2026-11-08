@@ -1,8 +1,28 @@
 import { AlertCircle, Bell, Check, ChevronRight, Clock3, Wrench } from 'lucide-react'
 import type { Alert } from '../engine/incidents.ts'
+import type { Optimization } from '../engine/optimize.ts'
+import type { Scenario } from '../engine/simulate.ts'
 import { duration, titleFor } from './format.ts'
 
-export function AlertRail({ alerts, selected, onAlert }: { alerts: Alert[]; selected: string | null; onAlert: (id: string) => void }) {
+function responseFor(alert: Alert, planning: { scenario: Scenario; search: Optimization } | undefined) {
+  if (!planning) return 'Review response'
+  const { scenario, search } = planning
+  const failure = scenario.failures.find((failure) => failure.facility.id === alert.facilityId)!
+  const jobs = search.best.jobs.filter((job) => job.facilityId === alert.facilityId)
+  const trips = jobs.reduce((count, job) => count + job.trips, 0)
+  const stops = search.best.plan.shutIns.filter((stop) => failure.facility.wells.some((well) => well.id === stop.wellId)).length
+  if (trips || stops) return [
+    trips ? trips + ' truck ' + (trips === 1 ? 'trip' : 'trips') : '',
+    stops ? 'shut in ' + stops + (stops === 1 ? ' well' : ' wells') : '',
+  ].filter(Boolean).join(' + ')
+  const result = search.best.facilities.find((facility) => facility.facilityId === alert.facilityId)
+  return alert.automatic ? 'Wait for repair' : result && result.autoAt !== null ? 'Accept automatic shut-in' : 'Monitor through repair'
+}
+
+export function AlertRail({ alerts, recommendations, selected, onAlert }: {
+  alerts: Alert[]; recommendations: ReadonlyMap<string, { scenario: Scenario; search: Optimization }>
+  selected: string | null; onAlert: (id: string) => void
+}) {
   const confirmed = alerts.filter((alert) => alert.verified)
   const pending = alerts.filter((alert) => !alert.verified)
   const critical = confirmed.filter((alert) => alert.category === 'pump_failure').length
@@ -16,6 +36,7 @@ export function AlertRail({ alerts, selected, onAlert }: { alerts: Alert[]; sele
       <strong>{alert.assetId}</strong>
       <span className="alert-meta">{alert.systemId} · {failure ? 'Critical' : alert.category === 'pipeline_leak' ? 'Urgent inspection' : 'Inspection'}</span>
       <span className="alert-action">{failure && <Clock3 size={12} />}{failure ? status : alert.verified ? 'Field inspection' : 'Awaiting running sample'}</span>
+      {failure && <span className="alert-response">{responseFor(alert, recommendations.get(alert.systemId))}</span>}
     </button>
   }
   return <aside className="panel alert-rail" aria-label="Active alerts">

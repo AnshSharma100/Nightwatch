@@ -1,10 +1,14 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowDownRight, ArrowRight, FlaskConical, Pause, Play, Plus, Truck, X } from 'lucide-react'
-import { optimize } from '../engine/optimize.ts'
+import type { Optimization } from '../engine/optimize.ts'
 import { frameAt, noAction, simulate } from '../engine/simulate.ts'
 import type { Job, Outcome, Plan, Scenario, ShutIn } from '../engine/simulate.ts'
 import { duration, money, number, stamp } from './format.ts'
 import { Trace } from './Trace.tsx'
+import { FleetReplay } from './FleetReplay.tsx'
+import { NemotronPanel } from './NemotronPanel.tsx'
+import type { Alert } from '../engine/incidents.ts'
+import type { Dataset } from '../engine/model.ts'
 
 export function firstResponse(scenario: Scenario): Plan {
   const jobs: Job[] = []
@@ -22,9 +26,8 @@ export function firstResponse(scenario: Scenario): Plan {
   return { jobs, shutIns: [] }
 }
 
-export function DecisionLab({ scenario, demo, onClose }: { scenario: Scenario; demo: boolean; onClose: () => void }) {
+export function DecisionLab({ scenario, demo, data, alerts, search, onClose }: { scenario: Scenario; demo: boolean; data: Dataset; alerts: Alert[]; search: Optimization; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null)
-  const search = useMemo(() => optimize(scenario), [scenario])
   const [draft, setDraft] = useState<Plan>(() => demo ? firstResponse(scenario) : noAction)
   const [manual, setManual] = useState<Outcome>(() => simulate(scenario, draft))
   const [error, setError] = useState('')
@@ -33,6 +36,7 @@ export function DecisionLab({ scenario, demo, onClose }: { scenario: Scenario; d
   const [dirty, setDirty] = useState(false)
   const max = search.baseline.duration
   const savings = manual.costs.total - search.best.costs.total
+  const shutDownCount = (outcome: Outcome) => outcome.facilities.filter((facility) => facility.autoAt !== null).length
 
   useEffect(() => {
     dialog.current?.showModal()
@@ -77,7 +81,7 @@ export function DecisionLab({ scenario, demo, onClose }: { scenario: Scenario; d
       <div className="lab-summary">
         <ArrowDownRight size={18} />
         <div><strong>{savings > 0.005 ? money(savings) + ' less than the manual response' : savings < -0.005 ? 'Manual response costs ' + money(-savings) + ' less' : 'Manual and recommended responses tie'}</strong>
-        <p>{search.best.jobs.length || search.best.plan.shutIns.length ? 'Recommended plan uses ' + search.best.jobs.reduce((sum, job) => sum + job.trips, 0) + ' truck trips and ' + search.best.plan.shutIns.length + ' selective well shut-ins.' : 'No intervention has the lowest cost among the evaluated responses.'} {search.evaluated} fleet schedules evaluated{search.limited ? ' with search limits' : ''}.</p></div>
+        <p>{search.best.jobs.length || search.best.plan.shutIns.length ? 'Recommended plan uses ' + search.best.jobs.reduce((sum, job) => sum + job.trips, 0) + ' truck trips and ' + search.best.plan.shutIns.length + ' selective well shut-ins.' : 'No intervention has the lowest cost among the evaluated responses.'} {search.evaluated} fleet schedules evaluated{search.limited ? ' with search limits' : ''}.</p><p>Automatic shut-ins · {shutDownCount(search.baseline)} without action · {shutDownCount(manual)} manual · {shutDownCount(search.best)} recommended</p></div>
       </div>
       <div className="lab-grid">
         <section className="plan-editor"><h3>Manual response</h3><p className="muted">Enter the jobs and well shut-ins you want to compare.</p>
@@ -116,8 +120,11 @@ export function DecisionLab({ scenario, demo, onClose }: { scenario: Scenario; d
       <section className="future">
         <div className="future-head"><div><span className="eyebrow">SYNCHRONIZED PLAYBACK</span><h3>System consequences</h3></div><span className="tag simulation-tag">Simulated · +{duration(minute)}</span></div>
         <div className="playback-inline"><button className="icon-btn" aria-label={playing ? 'Pause simulation' : 'Play simulation'} onClick={() => { if (!playing && minute >= max) setMinute(0); setPlaying(!playing) }}>{playing ? <Pause size={16} /> : <Play size={16} />}</button><input aria-label="Simulated minutes after decision" type="range" min="0" max={max} step="any" value={minute} onChange={(event) => { setPlaying(false); setMinute(+event.target.value) }} /></div>
-        <div className="fleet-strip">{[manual, search.best].map((outcome, index) => <div key={index}><Truck size={16} /><strong>{index ? 'Recommended' : 'Manual'}</strong><span>{outcome.jobs.filter((job) => job.dispatchMin <= minute && minute < job.freeMin).length}/{scenario.system.fleetSize} trucks occupied</span>
-          {outcome.jobs.filter((job) => job.dispatchMin <= minute && minute < job.freeMin).map((job) => <span className="tag" key={job.truck}>Truck {job.truck} · {job.facilityId}</span>)}</div>)}</div>
+        <div className="fleet-strip">
+          <FleetReplay scenario={scenario} outcome={manual} minute={minute} title="Manual" color="var(--amber)" />
+          <FleetReplay scenario={scenario} outcome={search.best} minute={minute} title="Recommended" color="var(--teal)" />
+        </div>
+        <p className="route-note">Truck paths are schematic. Departures, arrivals, and availability follow the simulation.</p>
         <div className="future-grid">{scenario.failures.map((failure, index) => {
           const outcomes = [search.baseline, manual, search.best]
           const labels = ['No action', 'Manual', 'Recommended']
@@ -135,6 +142,7 @@ export function DecisionLab({ scenario, demo, onClose }: { scenario: Scenario; d
           </article>
         })}</div>
       </section>
+      <NemotronPanel key={JSON.stringify(manual.plan)} context={{ data, alerts, scenario, baseline: search.baseline, manual, recommended: search.best }} />
     </div>
   </dialog>
 }

@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Activity, ArrowRight, Boxes, CircleHelp, Clock3, Database, Droplets, FlaskConical, LocateFixed, Pause, Play, Radio, Truck, Upload, X } from 'lucide-react'
 import { activeAlerts, detectIncidents } from '../engine/incidents.ts'
-import type { Incident } from '../engine/incidents.ts'
+import type { Alert, Incident } from '../engine/incidents.ts'
 import { read, yardId } from '../engine/model.ts'
 import type { Dataset } from '../engine/model.ts'
 import { scenarioAt } from '../engine/simulate.ts'
 import type { Scenario } from '../engine/simulate.ts'
+import { optimize } from '../engine/optimize.ts'
+import type { Optimization } from '../engine/optimize.ts'
 import { AlertRail } from './AlertRail.tsx'
 import { DecisionLab } from './DecisionLab.tsx'
 import { Inspector } from './Inspector.tsx'
@@ -18,10 +20,11 @@ type Demo = { stage: 'intro' | 'first-replay' | 'first-failure' | 'cluster-repla
 
 function demoSequence(incidents: Incident[]) {
   const failures = incidents.filter((incident) => incident.category === 'pump_failure')
-  for (const first of failures) {
-    const group = failures.filter((incident) => incident.systemId === first.systemId && incident.detectedAt >= first.detectedAt &&
-      incident.detectedAt <= first.detectedAt + 3600 && (first.clearedAt === null || incident.detectedAt < first.clearedAt))
-    if (group.length >= 3) return { first, last: group[2] }
+  for (const last of failures) {
+    const active = failures.filter((incident) => incident.systemId === last.systemId &&
+      incident.detectedAt <= last.detectedAt && incident.detectedAt >= last.detectedAt - 3600 &&
+      (incident.clearedAt === null || last.detectedAt < incident.clearedAt))
+    if (active.length >= 3) return { first: active[0], last }
   }
   return failures.length ? { first: failures[0], last: failures[0] } : null
 }
@@ -36,13 +39,25 @@ export function App() {
   const [playing, setPlaying] = useState(false)
   const [status, setStatus] = useState('Loading practice telemetry…')
   const [error, setError] = useState('')
-  const [lab, setLab] = useState<{ scenario: Scenario; demo: boolean } | null>(null)
+  const [lab, setLab] = useState<{ scenario: Scenario; demo: boolean; alerts: Alert[]; search: Optimization } | null>(null)
   const [demo, setDemo] = useState<Demo | null>(null)
   const request = useRef(0)
   const input = useRef<HTMLInputElement>(null)
   const incidents = useMemo(() => data ? detectIncidents(data) : [], [data])
   const at = data?.times[index] ?? 0
   const alerts = useMemo(() => data ? activeAlerts(data, incidents, at) : [], [data, incidents, at])
+  const planning = useMemo(() => {
+    const results = new Map<string, { scenario: Scenario; search: Optimization }>()
+    if (!data || playing) return results
+    const systems = new Set(alerts.filter((alert) => alert.category === 'pump_failure').map((alert) => alert.systemId))
+    for (const id of systems) {
+      const available = alerts.filter((alert) => alert.category === 'pump_failure' && alert.systemId === id)
+      if (available.some((alert) => alert.levelPct === undefined)) continue
+      const scenario = scenarioAt(data, alerts, id, at)
+      results.set(id, { scenario, search: optimize(scenario) })
+    }
+    return results
+  }, [data, alerts, at, playing])
   const failures = alerts.filter((alert) => alert.category === 'pump_failure')
   const system = data?.systems.find((system) => system.id === scope.systemId)
 
@@ -115,7 +130,19 @@ export function App() {
     if (data && index === data.times.length - 1) setPlaying(false)
   }, [data, index])
 
+  function interruptDemo() {
+    if (!demo || !playing) return
+    setPlaying(false)
+    setDemo(null)
+  }
+
+  function inspect(id: string) {
+    interruptDemo()
+    setSelected(id)
+  }
+
   function focus(id: string) {
+    interruptDemo()
     if (!data) return
     const asset = data.assets.get(id)
     const yard = data.systems.find((system) => yardId(system.id) === id)
@@ -126,6 +153,7 @@ export function App() {
   }
 
   function navigate(next: Scope) {
+    interruptDemo()
     setScope(next)
     setFocusRequest((value) => value + 1)
     setSelected(next.facilityId ?? next.systemId ?? null)
@@ -134,7 +162,9 @@ export function App() {
   function openLab(systemId: string, demoPlan = false) {
     if (!data) return
     try {
-      setLab({ scenario: scenarioAt(data, alerts, systemId, at), demo: demoPlan })
+      const current = planning.get(systemId)
+      const scenario = current?.scenario ?? scenarioAt(data, alerts, systemId, at)
+      setLab({ scenario, search: current?.search ?? optimize(scenario), demo: demoPlan, alerts })
       setPlaying(false)
       if (demoPlan) setDemo(null)
       setError('')
@@ -186,7 +216,8 @@ export function App() {
         <button className="soft-btn import-btn" onClick={() => input.current?.click()}><Upload size={15} /> Import data</button>
         <button className="primary-btn demo-btn" disabled={!data || Boolean(status)} onClick={() => void startDemo()}><Play size={14} fill="currentColor" /> Start Demo</button>
         <input ref={input} aria-label="Import network.json, ops.json and telemetry.csv" type="file" accept=".json,.csv" multiple hidden onChange={(event) => {
-          if (event.target.files?.length) void load(() => loadUpload(event.target.files!), 'uploaded dataset')
+          const files = event.target.files
+          if (files?.length) void load(() => loadUpload(files), 'uploaded dataset')
           event.target.value = ''
         }} />
       </div>
@@ -213,7 +244,7 @@ export function App() {
           <p>{demo.stage === 'intro' ? 'Jump to the lead-up and watch the fault emerge in the recording.' : demo.stage === 'first-failure' ? 'The alert shows the fault reading, headroom, and projected time to shut-in.' : demo.stage === 'cluster' ? 'Compare an immediate priority-based response with a system-wide plan.' : 'The playhead advances in five-minute recording steps.'}</p>
         </div><button className="primary-btn" disabled={playing} onClick={demoNext}>{demo.stage === 'intro' ? 'Replay the lead-up' : demo.stage === 'first-failure' && demo.first !== demo.last ? 'Show shared fleet pressure' : 'Compare responses'}<ArrowRight size={15} /></button><button className="icon-btn" aria-label="Exit demo" onClick={() => { setDemo(null); setPlaying(false) }}><X size={17} /></button></div>}
         <div className="console">
-          <AlertRail alerts={alerts} selected={selected} onAlert={focus} />
+          <AlertRail alerts={alerts} recommendations={planning} selected={selected} onAlert={focus} />
           <section className="panel network-panel" aria-label="Water network">
             <div className="panel-head network-head"><div><span className="eyebrow">SPATIAL OVERVIEW</span><h2>{scope.facilityId ? 'Facility view' : scope.systemId ? 'System view' : 'Network view'}</h2></div>
               <button className="small-btn" onClick={() => navigate({})}><LocateFixed size={14} /> Overview</button></div>
@@ -224,10 +255,10 @@ export function App() {
               {system && <><span>/</span><select aria-label="Select facility" value={scope.facilityId ?? ''} onChange={(event) => navigate({ systemId: system.id, facilityId: event.target.value || undefined })}>
                 <option value="">All facilities</option>{system.facilities.map((facility) => <option key={facility.id}>{facility.id}</option>)}</select></>}
             </nav>
-            <div className="map-container"><SpatialView focusRequest={focusRequest} data={data} at={at} scope={scope} selected={selected} alerts={alerts} onSelect={setSelected} onFocus={focus} /></div>
+            <div className="map-container"><SpatialView focusRequest={focusRequest} data={data} at={at} scope={scope} selected={selected} alerts={alerts} onSelect={inspect} onFocus={focus} /></div>
             <div className="map-footer"><span><i className="legend-dot water" /> Produced water</span><span><i className="legend-dot fault" /> Pump fault</span><span><i className="legend-dot inspect" /> Inspection</span></div>
           </section>
-          <Inspector data={data} at={at} selected={selected} alerts={alerts} onSelect={setSelected} onFocus={focus} onLab={openLab} />
+          <Inspector data={data} at={at} selected={selected} alerts={alerts} onSelect={inspect} onFocus={focus} onLab={openLab} />
         </div>
         <section className="panel timeline" aria-label="Historical playback">
           <div className="timeline-title"><div className="timeline-icon"><Clock3 size={19} /></div><div><h2>Recording timeline</h2><span className="tag">Recorded</span></div></div>
@@ -243,7 +274,7 @@ export function App() {
         <footer className="workspace-foot"><span>NIGHTWATCH / EOG PRODUCED WATER</span><span><FlaskConical size={13} /> Decision Lab compares hypothetical interventions</span></footer>
       </> : <section className="panel welcome"><div className="empty-glyph"><Database size={26} /></div><h2>Load a network</h2><p>Select the three EOG files together to build the network and analyze its recorded telemetry.</p><button className="primary-btn" onClick={() => input.current?.click()}><Upload size={15} /> Import dataset</button></section>}
     </main>
-    {lab && <DecisionLab scenario={lab.scenario} demo={lab.demo} onClose={() => setLab(null)} />}
+    {lab && data && <DecisionLab scenario={lab.scenario} demo={lab.demo} data={data} alerts={lab.alerts} search={lab.search} onClose={() => setLab(null)} />}
   </>
 }
 

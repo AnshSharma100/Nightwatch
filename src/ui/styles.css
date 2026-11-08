@@ -304,3 +304,36 @@
   .scene-unavailable { display: grid; height: 100%; place-items: center; padding: 40px 12px; text-align: center; color: #c4d9d5; font-size: 12px; }
   @media (max-width: 620px) { .scene-gestures { display: none !important; } }
 }
+@layer console {
+  @media (min-width: 791px) {
+    .console > .panel { height: clamp(490px, calc(100dvh - 377px), 690px); min-height: 490px; }
+  }
+}
+@layer lab {
+  .fleet-strip > .fleet-replay { display: block; padding: 0; overflow: hidden; border: 1px solid #33515a; }
+  .fleet-replay header { display: flex; align-items: center; gap: 6px; padding: 6px 8px; color: var(--branch-color); }
+  .fleet-replay header strong { color: var(--branch-color); }
+  .fleet-replay header span { margin-left: auto; color: var(--muted); font-size: 10px; }
+  .fleet-replay svg { display: block; width: 100%; height: auto; max-height: 145px; background: #152930; }
+  .fleet-replay svg text { font: 650 8px var(--mono); fill: #d8e6e3; }
+  .fleet-replay svg text.truck-number { fill: #15282b; }
+  .fleet-replay footer { font: 550 9px var(--mono); color: var(--muted); padding: 6px 8px; overflow-wrap: anywhere; }
+  .route-note { margin: 0 0 8px; color: var(--muted); font-size: 10px; }
+  .nemotron { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 8px; margin-top: 13px; padding: 11px; border: 1px solid #30464c; border-radius: 8px; background: #14252c; }
+  .nemotron h3 { display: flex; align-items: center; gap: 6px; font-size: 14px; }
+  .nemotron h3 svg { color: var(--teal); }
+  .nemotron p { margin-top: 4px; color: var(--muted); font-size: 11px; }
+  .nemotron ol, .nemotron-summary, .nemotron .form-error { width: 100%; }
+  .nemotron ol { margin: 0; padding-left: 19px; color: var(--teal); font: 550 10px/1.6 var(--mono); }
+  .nemotron .nemotron-summary { font-size: 13px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .nemotron-summary strong { display: block; color: var(--text); }
+}
+@layer responsive {
+  @media (max-width: 515px) {
+    .fleet-strip { grid-template-columns: 1fr; }
+  }
+}
+@layer console {
+  .alert-response { color: #c3d8d4; font-size: 11px; line-height: 1.2; }
+  .alert-response::first-letter { text-transform: uppercase; }
+}
