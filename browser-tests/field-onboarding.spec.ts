@@ -1,12 +1,10 @@
 import { expect, test } from '@playwright/test'
-import { fixture } from '../tests/fixture.ts'
+import { beginning, fixture } from '../tests/fixture.ts'
 
 for (const clears of [false, true]) {
-  test('historical dispatch offers a recovery action when the fault ' + (clears ? 'has cleared' : 'is still active'), async ({ page }) => {
+  test('dispatches from the selected recording when the fault ' + (clears ? 'has cleared later' : 'is still active later'), async ({ page, browser }) => {
     await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })
     const source = fixture((id, metric, step, value) => id === 'A/pump' && metric === 'status' && step >= 2 && (!clears || step === 2) ? 2 : value)
-    let updates = 0
-    page.on('request', (request) => { if (request.url().endsWith('/api/workflow') && request.method() === 'POST') updates++ })
     await page.goto('/')
     await page.locator('input[type=file]').setInputFiles([
       { name: 'network.json', mimeType: 'application/json', buffer: Buffer.from(source.network) },
@@ -21,18 +19,79 @@ for (const clears of [false, true]) {
     await slider.press('ArrowLeft')
     await frame
     await page.getByRole('button', { name: /Pump failure A\/pump/ }).click()
+    if (clears) {
+      await page.getByRole('button', { name: 'Compare response plans' }).click()
+      const lab = page.getByRole('main', { name: 'Decision Lab' })
+      await lab.getByRole('button', { name: 'Copy to operator plan' }).click()
+      await expect(lab.locator('.branch-choice.operator')).toHaveAttribute('aria-pressed', 'true')
+      await lab.getByRole('button', { name: 'Use this plan for approval' }).click()
+    }
     const workflow = page.locator('.workflow-fold')
-    await workflow.locator(':scope > summary').click()
-    await expect(workflow.getByRole('heading', { name: 'Historical recording — dispatch paused' })).toBeVisible()
-    await expect(workflow.locator('.field-connection-hint')).toHaveCount(0)
-    await expect(workflow.getByRole('button', { name: 'Begin review' })).toHaveCount(0)
-    await workflow.getByRole('button', { name: 'Go to latest recording' }).click()
-    await expect(page.getByText('Latest recording', { exact: true })).toBeVisible()
-    if (clears) await expect(page.getByText('No active incidents at the latest recording. Historical faults can be investigated, but cannot receive new field assignments.')).toBeVisible()
-    else await expect(workflow.getByRole('button', { name: 'Begin review' })).toBeVisible()
-    expect(updates).toBe(0)
+    if (!clears) await workflow.locator(':scope > summary').click()
+    await expect(workflow.getByRole('button', { name: 'Go to latest recording' })).toHaveCount(0)
+    await expect(workflow.getByText(/Demo assignment · evidence recorded at Nov 7, 00:10 UTC/)).toBeVisible()
+    const reviewResponse = page.waitForResponse((response) => response.url().endsWith('/api/workflow') && response.request().method() === 'POST')
+    await workflow.getByRole('button', { name: 'Begin review' }).click()
+    const reviewed = await reviewResponse
+    expect(reviewed.ok()).toBeTruthy()
+    const update = reviewed.request().postDataJSON()
+    expect(update.incident.observedAt).toBe(beginning + 600)
+    // Removing the latest-only policy must not allow forged timestamps or incidents.
+    for (const changed of [{ observedAt: beginning + 601 }, { assetId: 'unrelated/pump' }]) {
+      expect((await page.request.post('/api/workflow', { data: {
+        ...update, incident: { ...update.incident, ...changed },
+      } })).status()).toBe(422)
+    }
+    if (clears) expect((await page.request.post('/api/workflow', { data: {
+      ...update, incident: { ...update.incident, observedAt: beginning + 900 },
+    } })).status()).toBe(422)
+    await workflow.getByRole('button', { name: 'Create connection link' }).click()
+    const link = await workflow.getByLabel('Field connection link').inputValue()
+    const context = await browser.newContext({ viewport: { width: 390, height: 844 } })
+    try {
+      const field = await context.newPage()
+      await field.goto(link)
+      await field.getByRole('button', { name: 'Connect this device' }).click()
+      await field.getByRole('button', { name: 'Clock in' }).click()
+      await expect(field.getByRole('heading', { name: 'Available', exact: true })).toBeVisible()
+      await workflow.getByLabel('Reason for confirmation').fill('Confirmed from the selected demo recording.')
+      await workflow.getByRole('button', { name: 'Confirm incident' }).click()
+      await workflow.getByLabel('Available engineer').selectOption({ label: 'Facility engineer · A · Available' })
+      await workflow.getByLabel('Field instructions').fill('Inspect the pump in this recorded demo scenario.')
+      const assignmentResponse = page.waitForResponse((response) => response.url().endsWith('/api/workflow') && response.request().method() === 'POST')
+      await workflow.getByRole('button', { name: 'Send to Field', exact: true }).click()
+      const sent = await assignmentResponse
+      expect(sent.ok()).toBeTruthy()
+      const saved = await sent.json()
+      expect(saved.incident.observedAt).toBe(beginning + 600)
+      expect(saved.incident.readings).toContain('Tank fill · 69.8%')
+      if (clears) expect(saved.assignment.approvalPlan.at).toBe(beginning + 600)
+      const retried = await page.request.post('/api/workflow', { data: sent.request().postDataJSON() })
+      expect(retried.ok()).toBeTruthy()
+      expect((await retried.json()).history).toHaveLength(3)
+      await field.goto('/field/assignments/' + saved.assignment.id)
+      await expect(field.getByText(/Demo assignment · evidence recorded at Nov 7, 00:10 UTC/)).toBeVisible()
+      await field.getByRole('button', { name: 'Acknowledge' }).click()
+      await expect(workflow.getByText('Acknowledged', { exact: true })).toBeVisible()
+      await expect(page.getByRole('slider', { name: 'Recorded timestamp' })).toHaveValue('2')
+      if (process.env.NIGHTWATCH_SCREENSHOT_DIR) await page.screenshot({ path: process.env.NIGHTWATCH_SCREENSHOT_DIR + '/dispatch-recorded-' + clears + '.png' })
+    } finally { await context.close() }
   })
 }
+
+test('guided demo allows field review at its paused incident', async ({ page }) => {
+  await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Start Demo', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Recorded playback speed' }).selectOption('250')
+  await page.getByRole('button', { name: 'Replay the lead-up' }).click()
+  await expect(page.getByText('A pump has failed', { exact: true })).toBeVisible({ timeout: 20000 })
+  await page.getByRole('region', { name: 'Operator actions' }).getByRole('button', { name: '3 · Send to Field' }).click()
+  await expect(page.getByText('Guided demo', { exact: true })).toBeVisible()
+  const workflow = page.locator('.workflow-fold')
+  await expect(workflow.getByRole('button', { name: 'Begin review' })).toBeEnabled()
+  await expect(workflow.getByRole('button', { name: 'Go to latest recording' })).toHaveCount(0)
+})
 
 test('operator can find phone setup and generate a local QR using the configured public URL', async ({ page }) => {
   await page.request.post('/api/session', { data: { code: 'playwright-control-code' } })

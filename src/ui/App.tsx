@@ -76,7 +76,6 @@ export function App() {
   const workflow = useWorkflow()
   const [fieldDraft, setFieldDraft] = useState<{ key: string; text: string } | null>(null)
   const [approval, setApproval] = useState<{ key: string; selection: ApprovalPlan; response: string } | null>(null)
-  const [dispatchTarget, setDispatchTarget] = useState<string | null>(null)
   const cases = useMemo(() => new Map(workflow.entries.map((entry) => [caseKey(entry.incident), entry])), [workflow.entries])
   const request = useRef(0)
   const input = useRef<HTMLInputElement>(null)
@@ -91,7 +90,7 @@ export function App() {
   const recent = useMemo(() => incidents.filter((incident) => incident.clearedAt !== null && incident.clearedAt <= at)
     .sort((a, b) => b.detectedAt - a.detectedAt).slice(0, 3), [incidents, at])
   const system = data?.systems.find((item) => item.id === scope.systemId)
-  const editable = Boolean(data && at === data.now && !demo && !playing && !refreshing)
+  const editable = Boolean(data && !playing && !refreshing)
   const dismissed = new Set(editable && data ? alerts.filter((alert) => cases.get(caseKey(caseFromAlert(data, alert, at)))?.stage === 'dismissed').map((alert) => alert.assetId) : [])
   const verified = alerts.filter((alert) => alert.verified)
   const elsewhere = system && verified.length > 0 && verified.every((alert) => alert.systemId !== system.id) ? verified[0] : null
@@ -112,28 +111,12 @@ export function App() {
     }).catch((error: Error) => {
       if (!controller.signal.aborted) {
         setPlaying(false)
-        setDispatchTarget(null)
         setIndex(data.times.indexOf(at))
         setError(error.message)
       }
     })
     return () => controller.abort()
   }, [data, requestedAt, snapshot?.at])
-
-  useEffect(() => {
-    if (!dispatchTarget || !data || refreshing || at !== data.now) return
-    const next = alerts.find((alert) => alert.assetId === dispatchTarget) ?? alerts.find((alert) => alert.verified)
-    setDispatchTarget(null)
-    setSelected(next?.assetId ?? dispatchTarget)
-    setInspectorOpen(true)
-    setReplayNotice(!next ? 'No active incidents at the latest recording. Historical faults can be investigated, but cannot receive new field assignments.' :
-      next.assetId !== dispatchTarget ? 'The historical fault is no longer active. Showing an active incident at the latest recording for review.' :
-        'Latest recording selected. Begin review, confirm the incident, then choose an available engineer.')
-    window.requestAnimationFrame(() => {
-      const fold = document.querySelector<HTMLDetailsElement>('#asset-inspector .workflow-fold')
-      if (fold) { fold.open = true; fold.scrollIntoView({ block: 'nearest' }) }
-    })
-  }, [dispatchTarget, data, refreshing, at, alerts])
 
   useEffect(() => {
     if (!data || !current || playing || refreshing || !scope.systemId || !inspectorOpen) return
@@ -156,7 +139,6 @@ export function App() {
     labRequest.current?.abort()
     setData(dataset)
     setApproval(null)
-    setDispatchTarget(null)
     setFieldDraft(null)
     setSnapshot(latest)
     setCalculation(null)
@@ -474,7 +456,7 @@ export function App() {
       {data ? <>
         <OperationsStrip summary={current?.summary} onFocus={select} />
         <section className="operator-next" aria-label="Operator actions">
-          <div><strong>{priority ? titleFor[priority.category] + ' · ' + priority.facilityId : 'Review the network'}</strong><span>{replayNotice || (at !== data.now ? 'Historical replay. Review evidence and compare responses; use Latest for field dispatch.' : priority ? 'Check the evidence, compare a response, then approve field work.' : 'Select equipment to inspect it, or replay a recorded incident from the alert queue.')}</span></div>
+          <div><strong>{priority ? titleFor[priority.category] + ' · ' + priority.facilityId : 'Review the network'}</strong><span>{replayNotice || (priority ? 'Check the recorded evidence, compare a response, then approve field work from this timestamp.' : 'Select equipment to inspect it, or replay a recorded incident from the alert queue.')}</span></div>
           <div className="operator-next-buttons">
             <button className="small-btn" disabled={!priority} onClick={() => reviewPriority()}>1 · Review alert</button>
             <button className="primary-btn" disabled={!comparisonTarget || openingLab || refreshing} onClick={() => comparisonTarget && void openLab(comparisonTarget.systemId)}>{openingLab ? 'Opening comparison…' : '2 · Butterfly Effect'}</button>
@@ -524,8 +506,7 @@ export function App() {
                 }
               }}
               person={workflow.person} configured={workflow.configured} onSignIn={workflow.signIn} onSignOut={workflow.signOut}
-              latestAt={data.now} preparing={refreshing || dispatchTarget !== null} onRetry={workflow.refresh}
-              onResume={() => { setDispatchTarget(alert.assetId); setApproval(null); scrub(data.times.length - 1) }}
+              preparing={refreshing} onRetry={workflow.refresh} onPause={() => setPlaying(false)}
               response={chosen?.response ?? response} approvalPlan={chosen?.selection} onDiscardPlan={() => setApproval(null)} draft={fieldDraft?.key === key ? fieldDraft.text : undefined} />
           }} />}
         </div>

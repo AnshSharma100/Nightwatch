@@ -11,6 +11,23 @@ import { applyChange } from '../server/workflow.ts'
 import { workspaceStore } from '../server/store.ts'
 import { changeShift } from '../server/shifts.ts'
 
+test('recorded demo approvals use the selected evidence even when the fault clears later', () => {
+  const data = sampleDataset((asset, metric, step, value) => asset === 'A/pump' && metric === 'status' && step === 2 ? 2 : value)
+  const incidents = detectIncidents(data)
+  const at = data.times[2]
+  const alerts = activeAlerts(data, incidents, at)
+  const alert = alerts.find((item) => item.assetId === 'A/pump')!
+  assert.ok(alert)
+  assert.equal(activeAlerts(data, incidents, data.now).some((item) => item.assetId === 'A/pump'), false)
+  const selection = { network: data.networkKey, at, systemId: alert.systemId,
+    plan: { jobs: [{ truck: 1, facilityId: 'A', dispatchMin: 0, trips: 1 }], shutIns: [] } }
+  const prepared = prepareApproval(data, alerts, alert, selection, at)
+  assert.deepEqual(prepared.approvalPlan, selection)
+  assert.match(prepared.response, /Truck 1, 1 trip\(s\), first arrival after 20 min/)
+  assert.throws(() => prepareApproval(data, alerts, alert, { ...selection, at: data.now }, at), /different recording/)
+  assert.throws(() => prepareApproval(data, alerts, alert, selection, at + 1), /timestamp in this recording/)
+})
+
 test('selected plans are scoped, simulated, persisted and never replaced by a recommendation', () => {
   const data = sampleDataset((asset, metric, _step, value) => asset === 'A/pump' && metric === 'status' ? 2 : value)
   const before = structuredClone(data.telemetry)

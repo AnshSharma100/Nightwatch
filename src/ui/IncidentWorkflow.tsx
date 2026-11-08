@@ -145,17 +145,18 @@ function Enrollment({ incident }: { incident: WorkflowCase }) {
   </section>
 }
 
-export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft, approvalPlan, onDiscardPlan, latestAt, preparing, onResume, onRetry }: {
+export function IncidentWorkflow({ incident, entry, available, editable, onUpdate, person, configured, onSignIn, onSignOut, response, draft, approvalPlan, onDiscardPlan, preparing, onPause, onRetry }: {
   incident: WorkflowCase; entry?: WorkflowEntry; available: boolean | null; editable: boolean; onUpdate: (change: WorkflowUpdate) => Promise<void>
   person?: Person | null; configured?: boolean; onSignIn: (code: string) => Promise<void>; onSignOut: () => Promise<void>
   response?: string; draft?: string; approvalPlan?: ApprovalPlan; onDiscardPlan?: () => void
-  latestAt: number; preparing: boolean; onResume: () => void; onRetry: () => Promise<void>
+  preparing: boolean; onPause: () => void; onRetry: () => Promise<void>
 }) {
   const delivery = entry?.assignment?.delivery
   return <details className="inspector-fold workflow-fold" open={approvalPlan ? true : undefined}>
     <summary><ClipboardList size={15} /> Send to Field <span className="tag">{stageLabel[entry?.stage ?? 'detected']}</span></summary>
     <div className="inspector-section">
       {!entry?.assignment && <p>Review and confirm the incident, choose a clocked-in engineer, then send the approved instructions. Detection and confirmation alone never send a phone alert.</p>}
+      <p>Demo assignment · evidence recorded at {stamp(entry?.assignment ? entry.incident.observedAt : incident.observedAt)}.</p>
       {approvalPlan && !entry?.assignment && <section aria-label="Selected plan for approval"><h4>Butterfly plan ready for review</h4>
         <p>{response}</p><p>Times are measured from {stamp(approvalPlan.at)}. This assignment covers this facility; the saved simulation includes the shared system plan. No physical equipment is controlled.</p>
         <button className="small-btn" onClick={onDiscardPlan}>Discard selected plan</button></section>}
@@ -163,11 +164,8 @@ export function IncidentWorkflow({ incident, entry, available, editable, onUpdat
         {delivery && <p className="delivery-state">{deliveryLabel[delivery.status]}{delivery.failed > 0 ? ' · ' + delivery.failed + ' device request(s) failed' : ''}</p>}</>}
       {person?.role === 'control' ? <>
         {!editable ? <section aria-label="Field dispatch availability">
-          <h4>{incident.observedAt !== latestAt ? 'Historical recording — dispatch paused' : 'Enable field review'}</h4>
-          <p>{incident.observedAt !== latestAt ? 'You are viewing ' + stamp(incident.observedAt) + '. The latest recording is ' + stamp(latestAt) + '. New assignments require the latest evidence; this fault may already have cleared.' :
-            'Exit guided demo or playback mode to review and approve field work at the latest recording.'}</p>
-          <button className="primary-btn" disabled={preparing} onClick={onResume}>{preparing ? 'Loading recording…' : incident.observedAt !== latestAt ? 'Go to latest recording' : 'Enable field review'}</button>
-          <p>You are already signed in as control room. You do not need to sign out.</p>
+          <p>{preparing ? 'Loading the selected recorded evidence…' : 'Pause playback to review this incident and send a demo assignment.'}</p>
+          <button className="primary-btn" disabled={preparing} onClick={onPause}>{preparing ? 'Loading recording…' : 'Pause and review'}</button>
         </section> : available ? <WorkflowActions actor="control" incident={incident} entry={entry} onUpdate={onUpdate} response={response} draft={draft} approvalPlan={approvalPlan} /> :
           <><p>{available === false ? 'The workflow server is unavailable. Your control-room sign-in is still active; retry the connection.' : 'Connecting to the workflow server…'}</p>
             {available === false && <button className="small-btn" onClick={() => void onRetry()}>Retry connection</button>}</>}

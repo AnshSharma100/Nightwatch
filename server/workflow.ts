@@ -113,14 +113,18 @@ export function workflowHandler(store: WorkspaceStore, auth: SessionAuth, push: 
       const recording = recordings.find(input.recordingId, session.digest)
       if (!recording) { send(response, 404, { error: 'Reload the recorded dataset before changing this incident.' }); return }
       const { data, incidents } = recording
-      const alerts = activeAlerts(data, incidents, data.now)
-      const alert = alerts.find((item) => caseKey(caseFromAlert(data, item, data.now)) === caseKey(input.incident))
-      if (!alert || input.incident.observedAt !== data.now) {
-        send(response, 422, { error: 'Only active incidents at the latest recorded timestamp can be changed.' }); return
+      const at = input.incident.observedAt
+      if (!data.times.includes(at)) {
+        send(response, 422, { error: 'Choose a timestamp in this recording before reviewing field work.' }); return
       }
-      input.incident = caseFromAlert(data, alert, data.now)
+      const alerts = activeAlerts(data, incidents, at)
+      const alert = alerts.find((item) => caseKey(caseFromAlert(data, item, at)) === caseKey(input.incident))
+      if (!alert) {
+        send(response, 422, { error: 'This incident is not active at the selected recorded timestamp.' }); return
+      }
+      input.incident = caseFromAlert(data, alert, at)
       if (input.action === 'assign') {
-        try { Object.assign(input, prepareApproval(data, alerts, alert, input.approvalPlan)) }
+        try { Object.assign(input, prepareApproval(data, alerts, alert, input.approvalPlan, at)) }
         catch (error) { send(response, 422, { error: (error as Error).message }); return }
       }
     } else {

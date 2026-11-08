@@ -158,9 +158,9 @@ export function DecisionLab({ comparison, demo, data, alerts, theme, onClose, on
             {scenario.failures.map(({ facility }) => <option key={facility.id}>{facility.id}</option>)}
           </select></label>
           <p>{branch.label} · {branch.outcome ? money(branch.outcome.costs.total) : 'Not calculated'} across this system.</p>
-          <button className="primary-btn" disabled={!branch.outcome || running || (selectedBranch === 'operator' && dirty) || demo || scenario.at !== data.now}
+          <button className="primary-btn" disabled={!branch.outcome || running || (selectedBranch === 'operator' && dirty)}
             onClick={() => { if (branch.outcome) onApprove(branch.outcome, site) }}>Use this plan for approval</button>
-          <p>{demo || scenario.at !== data.now ? 'Historical exploration only. Open the latest recording to approve field work.' : 'Returns to Operations for incident confirmation, recipient selection and editable instructions. Nothing is sent yet.'}</p>
+          <p>Use this recorded decision point for a demo assignment. Returns to Operations for confirmation, recipient selection and editable instructions. Nothing is sent yet.</p>
         </div>
         <details className="lab-rules"><summary>How this simulation works</summary>
           <p><strong>Run simulation</strong> calculates a future. <strong>Play</strong> animates that result; it never sends an assignment.</p>

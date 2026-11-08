@@ -47,6 +47,7 @@ function AssignmentDetails({ entry, workflow }: { entry: WorkflowEntry; workflow
     <a className="field-back" href={fieldUrl}><ArrowLeft size={17} /> My assignments</a>
     <div className="field-detail-head"><div><p>{incident.facilityId}</p><h2>{titleFor[incident.category]}</h2></div><span className="tag">{stageLabel[entry.stage]}</span></div>
     <p className="field-assignee">{assignment.recipient.name} · Assigned {stamp(assignment.assignedAt / 1000)}</p>
+    <p>Demo assignment · evidence recorded at {stamp(incident.observedAt)}.</p>
     <section className="field-instructions">
       {assignment.briefing && <><h3>Field instructions</h3><p>{assignment.briefing}</p></>}
       <h3>Approved response</h3><p>{assignment.response}</p>

@@ -7,17 +7,18 @@ import { scenarioAt, simulate } from '../packages/domain/simulate.ts'
 import { optimize } from '../packages/domain/optimize.ts'
 
 /** Recalculate from session-owned evidence. Never accept client costs or instructions as calculated facts. */
-export function prepareApproval(data: Dataset, alerts: Alert[], alert: Alert, selected?: ApprovalPlan) {
+export function prepareApproval(data: Dataset, alerts: Alert[], alert: Alert, selected?: ApprovalPlan, at = data.now) {
+  if (!data.times.includes(at)) throw new Error('Choose a timestamp in this recording before approving a plan.')
   const failures = alerts.filter((item) => item.category === 'pump_failure' && item.systemId === alert.systemId)
   const canCompare = alert.category === 'pump_failure' && failures.every((item) => item.levelPct !== undefined)
-  if (selected && (!canCompare || selected.network !== data.networkKey || selected.at !== data.now ||
+  if (selected && (!canCompare || selected.network !== data.networkKey || selected.at !== at ||
       selected.systemId !== alert.systemId || !isPlan(selected.plan))) {
-    throw new Error('This plan belongs to a different recording or system. Reopen Butterfly Effect at the latest recording and simulate again.')
+    throw new Error('This plan belongs to a different recording or system. Reopen Butterfly Effect at the selected recording and simulate again.')
   }
-  const scenario = canCompare ? scenarioAt(data, failures, alert.systemId, data.now) : undefined
+  const scenario = canCompare ? scenarioAt(data, failures, alert.systemId, at) : undefined
   const outcome = scenario ? selected ? simulate(scenario, selected.plan) : optimize(scenario).best : undefined
   const approvalPlan: ApprovalPlan | undefined = selected && outcome ? {
-    network: data.networkKey, at: data.now, systemId: alert.systemId,
+    network: data.networkKey, at, systemId: alert.systemId,
     plan: { jobs: outcome.plan.jobs.map(({ truck, facilityId, dispatchMin, trips }) => ({ truck, facilityId, dispatchMin, trips })),
       shutIns: outcome.plan.shutIns.map(({ wellId, startMin }) => ({ wellId, startMin })) },
   } : undefined
